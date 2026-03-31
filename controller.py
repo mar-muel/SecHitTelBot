@@ -183,11 +183,10 @@ async def record_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     cid = update.message.chat_id
     session = games.get(cid)
-    if not session or not session.config.ai_narration:
+    if not session or not (session.config.ai_narration or session.config.narrator_chat):
         return
     name = update.message.from_user.first_name if update.message.from_user else "Unknown"
     text = update.message.text
-    logger.info(f"Recording message from {name}: {text}")
     session.narrator.record_message(name, text)
     if session.config.narrator_chat and "@narrator" in text.lower():
         response = await session.narrator.respond(name, text)
