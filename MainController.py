@@ -598,7 +598,6 @@ def end_game(bot, game, game_endcode):
         if GamesController.games[game.cid].board is not None:
             bot.send_message(game.cid,
                              "Game cancelled!\n\n%s" % game.print_roles())
-            # bot.send_message(ADMIN, "Game of Secret Hitler canceled in group %d" % game.cid)
             stats['cancelled'] = stats['cancelled'] + 1
         else:
             bot.send_message(game.cid, "Game cancelled!")
@@ -619,8 +618,6 @@ def end_game(bot, game, game_endcode):
             bot.send_message(game.cid,
                              "Game over! The liberals win by killing Hitler!\n\n%s" % game.print_roles())
             stats['libwin_kill'] = stats['libwin_kill'] + 1
-
-            # bot.send_message(ADMIN, "Game of Secret Hitler ended in group %d" % game.cid)
 
     with open(STATS, 'w') as f:
         json.dump(stats, f)

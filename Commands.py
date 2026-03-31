@@ -14,7 +14,6 @@ from Constants.Config import STATS
 from Boardgamebox.Board import Board
 from Boardgamebox.Game import Game
 from Boardgamebox.Player import Player
-from Constants.Config import ADMIN
 
 # Enable logging
 log.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -93,21 +92,19 @@ def command_ping(bot, update):
     bot.send_message(cid, 'pong - v0.4')
 
 
-# prints statistics, only ADMIN
 def command_stats(bot, update):
     cid = update.message.chat_id
-    if cid == ADMIN:
-        with open(STATS, 'r') as f:
-            stats = json.load(f)
-        stattext = "+++ Statistics +++\n" + \
-                    "Liberal Wins (policies): " + str(stats.get("libwin_policies")) + "\n" + \
-                    "Liberal Wins (killed Hitler): " + str(stats.get("libwin_kill")) + "\n" + \
-                    "Fascist Wins (policies): " + str(stats.get("fascwin_policies")) + "\n" + \
-                    "Fascist Wins (Hitler chancellor): " + str(stats.get("fascwin_hitler")) + "\n" + \
-                    "Games cancelled: " + str(stats.get("cancelled")) + "\n\n" + \
-                    "Total amount of groups: " + str(len(stats.get("groups"))) + "\n" + \
-                    "Games running right now: "
-        bot.send_message(cid, stattext)
+    with open(STATS, 'r') as f:
+        stats = json.load(f)
+    stattext = "+++ Statistics +++\n" + \
+                "Liberal Wins (policies): " + str(stats.get("libwin_policies")) + "\n" + \
+                "Liberal Wins (killed Hitler): " + str(stats.get("libwin_kill")) + "\n" + \
+                "Fascist Wins (policies): " + str(stats.get("fascwin_policies")) + "\n" + \
+                "Fascist Wins (Hitler chancellor): " + str(stats.get("fascwin_hitler")) + "\n" + \
+                "Games cancelled: " + str(stats.get("cancelled")) + "\n\n" + \
+                "Total amount of groups: " + str(len(stats.get("groups"))) + "\n" + \
+                "Games running right now: "
+    bot.send_message(cid, stattext)
 
 
 # help page
@@ -196,8 +193,6 @@ def command_startgame(bot, update):
         game.shuffle_player_sequence()
         game.board.state.player_counter = 0
         bot.send_message(game.cid, game.board.print_board())
-        #group_name = update.message.chat.title
-        #bot.send_message(ADMIN, "Game of Secret Hitler started in group %s (%d)" % (group_name, cid))
         MainController.start_round(bot, game)
 
 def command_cancelgame(bot, update):

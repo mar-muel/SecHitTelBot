@@ -1,0 +1,19 @@
+[project]
+name = "secreth-telegrambot"
+version = "0.1.0"
+description = "Telegram bot for the Secret Hitler board game"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "python-telegram-bot==8.0.0",
+    "requests==2.12.4",
+    "six==1.10.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

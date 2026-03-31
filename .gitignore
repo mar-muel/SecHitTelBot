@@ -27,4 +27,7 @@ share/python-wheels/
 MANIFEST
 
 # Secrets
-Constants/Config.py
+.env
+
+# Logs
+logs/*.log
