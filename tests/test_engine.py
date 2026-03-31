@@ -99,7 +99,7 @@ class TestEngineBasics:
 
 
 class TestRandomGames:
-    @pytest.mark.parametrize("num_players", [5, 6, 7, 8, 9, 10])
+    @pytest.mark.parametrize("num_players", [4, 5, 6, 7, 8, 9, 10])
     def test_random_game_completes(self, num_players: int):
         for seed in range(20):
             e = GameEngine(num_players, seed=seed)

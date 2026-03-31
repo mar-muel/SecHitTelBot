@@ -1,5 +1,20 @@
 PLAYER_SETS = {
     # only for testing purposes
+    2: {
+        "roles": [
+            "Liberal",
+            "Hitler"
+        ],
+        "track": [
+            None,
+            None,
+            "policy",
+            "kill",
+            "kill",
+            "win"
+        ]
+    },
+    # only for testing purposes
     3: {
         "roles": [
             "Liberal",

@@ -24,7 +24,8 @@ commands = [
     '/cancelgame - Cancels an existing game. All data of the game will be lost',
     '/board - Prints the current board with fascist and liberals tracks, presidential order and election counter',
     '/votes - Prints who voted',
-    '/calltovote - Calls the players to vote'
+    '/calltovote - Calls the players to vote',
+    '/stats - Shows game statistics'
 ]
 
 symbols = [
@@ -93,14 +94,29 @@ async def command_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     assert update.message is not None
     cid = update.message.chat_id
     s = stats.get()
-    stattext = ("+++ Statistics +++\n"
-                f"Liberal Wins (policies): {s.get('libwin_policies')}\n"
-                f"Liberal Wins (killed Hitler): {s.get('libwin_kill')}\n"
-                f"Fascist Wins (policies): {s.get('fascwin_policies')}\n"
-                f"Fascist Wins (Hitler chancellor): {s.get('fascwin_hitler')}\n"
-                f"Games cancelled: {s.get('cancelled')}\n\n"
-                f"Total amount of groups: {len(s.get('groups', []))}\n"
-                f"Games running right now: {len(controller.games)}")
+    lib_pol = s.get('libwin_policies', 0)
+    lib_kill = s.get('libwin_kill', 0)
+    fasc_pol = s.get('fascwin_policies', 0)
+    fasc_hit = s.get('fascwin_hitler', 0)
+    cancelled = s.get('cancelled', 0)
+    total = lib_pol + lib_kill + fasc_pol + fasc_hit
+
+    def pct(n):
+        return f"{n / total * 100:.0f}%" if total else "-"
+
+    stattext = (
+        "📊 Statistics\n"
+        "─────────────────\n"
+        f"Games played: {total}\n"
+        f"Games cancelled: {cancelled}\n\n"
+        f"🕊 Liberal wins: {lib_pol + lib_kill} ({pct(lib_pol + lib_kill)})\n"
+        f"  Policies enacted: {lib_pol}\n"
+        f"  Hitler killed: {lib_kill}\n\n"
+        f"💀 Fascist wins: {fasc_pol + fasc_hit} ({pct(fasc_pol + fasc_hit)})\n"
+        f"  Policies enacted: {fasc_pol}\n"
+        f"  Hitler chancellor: {fasc_hit}\n\n"
+        f"Groups: {len(s.get('groups', []))} | Running now: {len(controller.games)}"
+    )
     await context.bot.send_message(cid, stattext)
 
 
@@ -163,9 +179,10 @@ async def command_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                   f"I will soon tell you your secret role.")
             session.add_player(uid, player)
         except Exception:
+            bot_name = (await context.bot.get_me()).username
             await context.bot.send_message(session.cid,
                              f"{fname}, I can't send you a private message. "
-                             f"Please go to @thesecrethitlerbot and click \"Start\".\n"
+                             f"Please go to @{bot_name} and click \"Start\".\n"
                              f"You then need to send /join again.")
         else:
             logger.info(f"{fname} ({uid}) joined a game in {session.cid}")

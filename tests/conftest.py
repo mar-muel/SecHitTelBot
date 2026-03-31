@@ -52,7 +52,7 @@ def _setup_session(bot, num_players):
     return session
 
 
-@pytest.fixture(params=[5, 7, 9, 10])
+@pytest.fixture(params=[4, 5, 6, 7, 8, 9, 10])
 def session_any(request, bot):
     return _setup_session(bot, request.param)
 

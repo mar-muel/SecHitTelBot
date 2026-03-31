@@ -530,7 +530,8 @@ async def inform_fascists(bot, session):
         elif p.role == "Hitler":
             if n <= 6:
                 fascists = session.engine.game.get_fascists()
-                await bot.send_message(uid, f"Your fellow fascist is: {fascists[0].name}")
+                if fascists:
+                    await bot.send_message(uid, f"Your fellow fascist is: {fascists[0].name}")
 
 
 def print_player_info(player_number):
@@ -584,6 +585,6 @@ async def end_game(bot, session, cancelled=False):
 
 
 async def error_handler(update, context: ContextTypes.DEFAULT_TYPE):
-    logger.warning(f'Update "{update}" caused error "{context.error}"')
+    logger.error(f'Update caused error "{context.error}"', exc_info=context.error)
 
 

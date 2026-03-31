@@ -24,9 +24,17 @@ Add the bot to a Telegram group (5-10 players needed).
 - `/votes` - Show who voted
 - `/calltovote` - Remind players to vote
 
-## Development
+## Setup
 
-Requires Python 3.14+ and [uv](https://docs.astral.sh/uv/).
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/).
+
+```sh
+# 1. Get a bot token from @BotFather on Telegram
+# 2. Run:
+TELEGRAM_BOT_TOKEN=<your_token> uv run python main.py
+```
+
+Set `MIN_PLAYERS=2` for testing with fewer people.
 
 ```sh
 uv run pytest tests/ -q    # run tests
