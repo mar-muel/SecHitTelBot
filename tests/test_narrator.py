@@ -109,7 +109,7 @@ class TestMaybeNarrate:
     async def test_skips_when_disabled(self):
         bot = AsyncMock()
         session = MagicMock()
-        session.config = GameConfig(ai_narration=False)
+        session.config = GameConfig()
         await maybe_narrate(bot, session, "policy_enacted", {})
         bot.send_message.assert_not_called()
 
@@ -117,7 +117,8 @@ class TestMaybeNarrate:
     async def test_sends_when_enabled(self):
         bot = AsyncMock()
         session = MagicMock()
-        session.config = GameConfig(ai_narration=True)
+        session.config = GameConfig()
+        session.config.toggle("ai_narration")
         session.cid = -999
         session.narrator = AsyncMock()
         session.narrator.narrate = AsyncMock(return_value="Drama unfolds.")
@@ -128,7 +129,8 @@ class TestMaybeNarrate:
     async def test_skips_when_narration_fails(self):
         bot = AsyncMock()
         session = MagicMock()
-        session.config = GameConfig(ai_narration=True)
+        session.config = GameConfig()
+        session.config.toggle("ai_narration")
         session.narrator = AsyncMock()
         session.narrator.narrate = AsyncMock(return_value=None)
         await maybe_narrate(bot, session, "policy_enacted", {})
@@ -139,8 +141,17 @@ class TestGameConfig:
     def test_defaults(self):
         c = GameConfig()
         assert c.ai_narration is False
+        assert c.narrator_chat is False
 
     def test_toggle(self):
         c = GameConfig()
-        c.ai_narration = True
+        c.toggle("ai_narration")
         assert c.ai_narration is True
+        c.toggle("ai_narration")
+        assert c.ai_narration is False
+
+    def test_features_populated(self):
+        c = GameConfig()
+        assert "ai_narration" in c.features
+        assert "narrator_chat" in c.features
+        assert c.features["ai_narration"].name == "AI Narration"

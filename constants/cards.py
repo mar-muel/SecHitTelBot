@@ -1,11 +1,20 @@
-PLAYER_SETS = {
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class PlayerSet:
+    roles: list[str]
+    track: list[str | None]
+
+
+PLAYER_SETS: dict[int, PlayerSet] = {
     # only for testing purposes
-    2: {
-        "roles": [
+    2: PlayerSet(
+        roles=[
             "Liberal",
             "Hitler"
         ],
-        "track": [
+        track=[
             None,
             None,
             "policy",
@@ -13,15 +22,15 @@ PLAYER_SETS = {
             "kill",
             "win"
         ]
-    },
+    ),
     # only for testing purposes
-    3: {
-        "roles": [
+    3: PlayerSet(
+        roles=[
             "Liberal",
             "Fascist",
             "Hitler"
         ],
-        "track": [
+        track=[
             None,
             None,
             "policy",
@@ -29,16 +38,16 @@ PLAYER_SETS = {
             "kill",
             "win"
         ]
-    },
+    ),
     # only for testing purposes
-    4: {
-        "roles": [
+    4: PlayerSet(
+        roles=[
             "Liberal",
             "Liberal",
             "Fascist",
             "Hitler"
         ],
-        "track": [
+        track=[
             None,
             None,
             "policy",
@@ -46,16 +55,16 @@ PLAYER_SETS = {
             "kill",
             "win"
         ]
-    },
-    5: {
-        "roles": [
+    ),
+    5: PlayerSet(
+        roles=[
             "Liberal",
             "Liberal",
             "Liberal",
             "Fascist",
             "Hitler"
         ],
-        "track": [
+        track=[
             None,
             None,
             "policy",
@@ -63,9 +72,9 @@ PLAYER_SETS = {
             "kill",
             "win"
         ]
-    },
-    6: {
-        "roles": [
+    ),
+    6: PlayerSet(
+        roles=[
             "Liberal",
             "Liberal",
             "Liberal",
@@ -73,7 +82,7 @@ PLAYER_SETS = {
             "Fascist",
             "Hitler"
         ],
-        "track": [
+        track=[
             None,
             None,
             "policy",
@@ -81,9 +90,9 @@ PLAYER_SETS = {
             "kill",
             "win"
         ]
-    },
-    7: {
-        "roles": [
+    ),
+    7: PlayerSet(
+        roles=[
             "Liberal",
             "Liberal",
             "Liberal",
@@ -92,7 +101,7 @@ PLAYER_SETS = {
             "Fascist",
             "Hitler"
         ],
-        "track": [
+        track=[
             None,
             "inspect",
             "choose",
@@ -100,9 +109,9 @@ PLAYER_SETS = {
             "kill",
             "win"
         ]
-    },
-    8: {
-        "roles": [
+    ),
+    8: PlayerSet(
+        roles=[
             "Liberal",
             "Liberal",
             "Liberal",
@@ -112,7 +121,7 @@ PLAYER_SETS = {
             "Fascist",
             "Hitler"
         ],
-        "track": [
+        track=[
             None,
             "inspect",
             "choose",
@@ -120,9 +129,9 @@ PLAYER_SETS = {
             "kill",
             "win"
         ]
-    },
-    9: {
-        "roles": [
+    ),
+    9: PlayerSet(
+        roles=[
             "Liberal",
             "Liberal",
             "Liberal",
@@ -133,7 +142,7 @@ PLAYER_SETS = {
             "Fascist",
             "Hitler"
         ],
-        "track": [
+        track=[
             "inspect",
             "inspect",
             "choose",
@@ -141,9 +150,9 @@ PLAYER_SETS = {
             "kill",
             "win"
         ]
-    },
-    10: {
-        "roles": [
+    ),
+    10: PlayerSet(
+        roles=[
             "Liberal",
             "Liberal",
             "Liberal",
@@ -155,7 +164,7 @@ PLAYER_SETS = {
             "Fascist",
             "Hitler"
         ],
-        "track": [
+        track=[
             "inspect",
             "inspect",
             "choose",
@@ -163,7 +172,7 @@ PLAYER_SETS = {
             "kill",
             "win"
         ]
-    },
+    ),
 }
 
 POLICIES = [

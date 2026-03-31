@@ -11,19 +11,55 @@ from telegram.ext import ContextTypes
 
 import stats
 from boardgamebox.game import Game
+from constants.cards import PLAYER_SETS
 from engine import GameEngine, Action, EndCode
 from narrator import GameNarrator
 
 import datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, field, fields
 
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
+class Feature:
+    key: str
+    name: str
+    description: str
+    enabled: bool = False
+
+
+FEATURES: list[Feature] = [
+    Feature(
+        key="ai_narration",
+        name="AI Narration",
+        description="An AI narrator adds dramatic flair to game events, "
+                    "referencing the group conversation.",
+    ),
+    Feature(
+        key="narrator_chat",
+        name="Narrator Chat",
+        description="Players can talk to the narrator by writing @narrator "
+                    "in the group chat.",
+    ),
+]
+
+
+@dataclass
 class GameConfig:
-    ai_narration: bool = False
+    features: dict[str, Feature] = field(default_factory=lambda: {
+        f.key: Feature(key=f.key, name=f.name, description=f.description)
+        for f in FEATURES
+    })
+
+    def __getattr__(self, name: str) -> bool:
+        if name in self.__dict__.get("features", {}):
+            return self.features[name].enabled
+        raise AttributeError(name)
+
+    def toggle(self, key: str):
+        self.features[key].enabled = not self.features[key].enabled
 
 games: dict[int, GameSession] = {}
 
@@ -100,8 +136,8 @@ async def handle_config(update: Update, context: ContextTypes.DEFAULT_TYPE):
     action = regex.group(2)
     try:
         session = games[cid]
-        if action == "ai_narration":
-            session.config.ai_narration = not session.config.ai_narration
+        if action in session.config.features:
+            session.config.toggle(action)
             await callback.edit_message_text(
                 text=_config_text(session),
                 reply_markup=_config_markup(session),
@@ -113,32 +149,32 @@ async def handle_config(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def _config_text(session: GameSession) -> str:
-    ai = "ON" if session.config.ai_narration else "OFF"
-    return (
-        "Game configuration:\n\n"
-        f"AI Narration [{ai}]\n"
-        "  An AI narrator adds dramatic flair to game events, "
-        "referencing the group conversation.\n\n"
-        "Toggle settings, then press Done."
-    )
+    lines = ["Game configuration:\n"]
+    for f in session.config.features.values():
+        status = "ON" if f.enabled else "OFF"
+        lines.append(f"{f.name} [{status}]")
+        lines.append(f"  {f.description}\n")
+    lines.append("Toggle settings, then press Done.")
+    return "\n".join(lines)
 
 
 def _config_markup(session: GameSession) -> InlineKeyboardMarkup:
     strcid = str(session.cid)
-    ai = "ON" if session.config.ai_narration else "OFF"
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"AI Narration: {ai}", callback_data=f"{strcid}_config_ai_narration")],
-        [InlineKeyboardButton("Done", callback_data=f"{strcid}_config_done")],
-    ])
+    btns = []
+    for f in session.config.features.values():
+        status = "ON" if f.enabled else "OFF"
+        btns.append([InlineKeyboardButton(f"{f.name}: {status}", callback_data=f"{strcid}_config_{f.key}")])
+    btns.append([InlineKeyboardButton("Done", callback_data=f"{strcid}_config_done")])
+    return InlineKeyboardMarkup(btns)
 
 
 def _config_summary(session: GameSession) -> str:
-    features = []
-    if session.config.ai_narration:
-        features.append("AI Narration")
-    if features:
-        return "Game configured with: " + ", ".join(features) + "\nPlayers can now /join!"
-    return "Game configured with default settings.\nPlayers can now /join!"
+    lines = ["Game configuration:"]
+    for f in session.config.features.values():
+        status = "ON" if f.enabled else "OFF"
+        lines.append(f"  {f.name}: {status}")
+    lines.append("\nPlayers can now /join!")
+    return "\n".join(lines)
 
 
 async def record_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -153,7 +189,7 @@ async def record_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     logger.info(f"Recording message from {name}: {text}")
     session.narrator.record_message(name, text)
-    if "@narrator" in text.lower():
+    if session.config.narrator_chat and "@narrator" in text.lower():
         response = await session.narrator.respond(name, text)
         if response:
             await context.bot.send_message(cid, f"📖 {response}")
@@ -649,18 +685,14 @@ async def inform_fascists(bot, session):
 
 
 def print_player_info(player_number):
-    if player_number == 5:
-        return "There are 3 Liberals, 1 Fascist and Hitler. Hitler knows who the Fascist is."
-    elif player_number == 6:
-        return "There are 4 Liberals, 1 Fascist and Hitler. Hitler knows who the Fascist is."
-    elif player_number == 7:
-        return "There are 4 Liberals, 2 Fascists and Hitler. Hitler doesn't know who the Fascists are."
-    elif player_number == 8:
-        return "There are 5 Liberals, 2 Fascists and Hitler. Hitler doesn't know who the Fascists are."
-    elif player_number == 9:
-        return "There are 5 Liberals, 3 Fascists and Hitler. Hitler doesn't know who the Fascists are."
-    elif player_number == 10:
-        return "There are 6 Liberals, 3 Fascists and Hitler. Hitler doesn't know who the Fascists are."
+    roles = PLAYER_SETS[player_number].roles
+    libs = roles.count("Liberal")
+    fascs = roles.count("Fascist")
+    fasc_word = "Fascist" if fascs == 1 else "Fascists"
+    hitler_info = ("Hitler knows who the Fascist is."
+                   if player_number <= 6
+                   else "Hitler doesn't know who the Fascists are.")
+    return f"There are {libs} Liberals, {fascs} {fasc_word} and Hitler. {hitler_info}"
 
 
 async def end_game(bot, session, cancelled=False):

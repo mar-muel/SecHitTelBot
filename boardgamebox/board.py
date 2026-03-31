@@ -7,7 +7,7 @@ class Board:
     def __init__(self, playercount, game):
         self.state = State()
         self.num_players = playercount
-        self.fascist_track_actions = PLAYER_SETS[self.num_players]["track"]
+        self.fascist_track_actions = PLAYER_SETS[self.num_players].track
         self.policies = random.sample(POLICIES, len(POLICIES))
         self.game = game
         self.discards = []

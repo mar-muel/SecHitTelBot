@@ -154,7 +154,7 @@ class GameEngine:
         return result
 
     def _assign_roles(self, num_players: int) -> None:
-        available = list(PLAYER_SETS[num_players]["roles"])
+        available = list(PLAYER_SETS[num_players].roles)
         for uid in self.game.playerlist:
             idx = randrange(len(available))
             role = available.pop(idx)

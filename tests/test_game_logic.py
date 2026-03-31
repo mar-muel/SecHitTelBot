@@ -7,6 +7,39 @@ import controller
 from conftest import sent_texts
 
 
+class TestPlayerSets:
+    @pytest.mark.parametrize("n", PLAYER_SETS.keys())
+    def test_roles_count_matches_player_count(self, n):
+        assert len(PLAYER_SETS[n].roles) == n
+
+    @pytest.mark.parametrize("n", PLAYER_SETS.keys())
+    def test_exactly_one_hitler(self, n):
+        assert PLAYER_SETS[n].roles.count("Hitler") == 1
+
+    @pytest.mark.parametrize("n", PLAYER_SETS.keys())
+    def test_only_valid_roles(self, n):
+        for role in PLAYER_SETS[n].roles:
+            assert role in ("Liberal", "Fascist", "Hitler")
+
+    @pytest.mark.parametrize("n", PLAYER_SETS.keys())
+    def test_track_length_is_six(self, n):
+        assert len(PLAYER_SETS[n].track) == 6
+
+    @pytest.mark.parametrize("n", PLAYER_SETS.keys())
+    def test_track_ends_with_win(self, n):
+        assert PLAYER_SETS[n].track[-1] == "win"
+
+    @pytest.mark.parametrize("n", PLAYER_SETS.keys())
+    def test_track_only_valid_actions(self, n):
+        for action in PLAYER_SETS[n].track:
+            assert action in (None, "policy", "inspect", "choose", "kill", "win")
+
+    @pytest.mark.parametrize("n", [5, 6, 7, 8, 9, 10])
+    def test_liberal_majority(self, n):
+        roles = PLAYER_SETS[n].roles
+        assert roles.count("Liberal") > roles.count("Fascist") + 1
+
+
 class TestGameSession:
     def test_lobby_phase(self, bot, session5):
         # Session should be started (engine exists)
@@ -25,7 +58,7 @@ class TestGameSession:
 
 class TestRoleAssignment:
     def test_correct_role_counts(self, bot, session_any):
-        expected = PLAYER_SETS[len(session_any.playerlist)]["roles"]
+        expected = PLAYER_SETS[len(session_any.playerlist)].roles
         actual = [session_any.playerlist[uid].role for uid in session_any.playerlist]
         for role in ("Liberal", "Fascist", "Hitler"):
             assert actual.count(role) == expected.count(role)
