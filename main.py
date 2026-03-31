@@ -6,28 +6,29 @@ Setup:
     3. Run: uv run python main.py
 
 Optional env vars:
-    MIN_PLAYERS  - Minimum players to start a game (default: 5)
-    STATS_PATH   - Path to stats JSON file (default: stats.json)
+    MIN_PLAYERS      - Minimum players to start a game (default: 5)
+    STATS_PATH       - Path to stats JSON file (default: stats.json)
+    ANTHROPIC_API_KEY - API key for AI narration feature (optional)
 """
 
-import logging as log
+import logging
 
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 
 import commands
 import controller
 import stats
 from config import TOKEN
 
-log.basicConfig(format='%(asctime)s [%(levelname)-8s] %(name)s  %(message)s',
+logging.basicConfig(format='%(asctime)s [%(levelname)-8s] %(name)s  %(message)s',
                 datefmt='%H:%M:%S',
-                level=log.INFO,
+                level=logging.INFO,
                 handlers=[
-                    log.FileHandler('logs/logging.log'),
-                    log.StreamHandler(),
+                    logging.FileHandler('logs/logging.log'),
+                    logging.StreamHandler(),
                 ])
 
-logger = log.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -51,6 +52,7 @@ def main():
     app.add_handler(CommandHandler("votes", commands.command_votes))
     app.add_handler(CommandHandler("calltovote", commands.command_calltovote))
 
+    app.add_handler(CallbackQueryHandler(pattern="(-[0-9]*)_config_(.*)", callback=controller.handle_config))
     app.add_handler(CallbackQueryHandler(pattern="(-[0-9]*)_chan_(.*)", callback=controller.nominate_chosen_chancellor))
     app.add_handler(CallbackQueryHandler(pattern="(-[0-9]*)_insp_(.*)", callback=controller.choose_inspect))
     app.add_handler(CallbackQueryHandler(pattern="(-[0-9]*)_choo_(.*)", callback=controller.choose_choose))
@@ -58,6 +60,8 @@ def main():
     app.add_handler(CallbackQueryHandler(pattern="(-[0-9]*)_(yesveto|noveto)", callback=controller.choose_veto))
     app.add_handler(CallbackQueryHandler(pattern="(-[0-9]*)_(liberal|fascist|veto)", callback=controller.choose_policy))
     app.add_handler(CallbackQueryHandler(pattern="(-[0-9]*)_(Ja|Nein)", callback=controller.handle_voting))
+
+    app.add_handler(MessageHandler(filters.TEXT & filters.ChatType.GROUPS, controller.record_message))
 
     app.add_error_handler(controller.error_handler)
 

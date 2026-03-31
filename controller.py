@@ -3,7 +3,7 @@
 """Telegram UI layer for Secret Hitler. All game logic lives in engine.py."""
 
 import asyncio
-import logging as log
+import logging
 import re
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -12,11 +12,18 @@ from telegram.ext import ContextTypes
 import stats
 from boardgamebox.game import Game
 from engine import GameEngine, Action, EndCode
+from narrator import GameNarrator
 
 import datetime
+from dataclasses import dataclass
 
 
-logger = log.getLogger(__name__)
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class GameConfig:
+    ai_narration: bool = False
 
 games: dict[int, GameSession] = {}
 
@@ -31,6 +38,8 @@ class GameSession:
         self.engine: GameEngine | None = None
         self.pending_votes: dict[int, bool] = {}
         self.dateinitvote: datetime.datetime | None = None
+        self.config = GameConfig()
+        self.narrator: GameNarrator = GameNarrator()
 
     @property
     def started(self):
@@ -70,6 +79,84 @@ class GameSession:
                 rtext += "(dead) "
             rtext += f"secret role was {p.role}\n"
         return rtext
+
+
+async def maybe_narrate(bot, session: GameSession, event: str, narr_ctx: dict):
+    """If AI narration is enabled, send a narrated follow-up message."""
+    if not session.config.ai_narration:
+        return
+    narrated = await session.narrator.narrate(event, narr_ctx)
+    if narrated:
+        await bot.send_message(session.cid, f"📖 {narrated}")
+
+
+async def handle_config(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    callback = update.callback_query
+    assert callback is not None
+    assert callback.data is not None
+    regex = re.search(r"(-[0-9]*)_config_(.*)", callback.data)
+    assert regex is not None
+    cid = int(regex.group(1))
+    action = regex.group(2)
+    try:
+        session = games[cid]
+        if action == "ai_narration":
+            session.config.ai_narration = not session.config.ai_narration
+            await callback.edit_message_text(
+                text=_config_text(session),
+                reply_markup=_config_markup(session),
+            )
+        elif action == "done":
+            await callback.edit_message_text(_config_summary(session))
+    except Exception as e:
+        logger.error(f"handle_config error: {e}")
+
+
+def _config_text(session: GameSession) -> str:
+    ai = "ON" if session.config.ai_narration else "OFF"
+    return (
+        "Game configuration:\n\n"
+        f"AI Narration [{ai}]\n"
+        "  An AI narrator adds dramatic flair to game events, "
+        "referencing the group conversation.\n\n"
+        "Toggle settings, then press Done."
+    )
+
+
+def _config_markup(session: GameSession) -> InlineKeyboardMarkup:
+    strcid = str(session.cid)
+    ai = "ON" if session.config.ai_narration else "OFF"
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"AI Narration: {ai}", callback_data=f"{strcid}_config_ai_narration")],
+        [InlineKeyboardButton("Done", callback_data=f"{strcid}_config_done")],
+    ])
+
+
+def _config_summary(session: GameSession) -> str:
+    features = []
+    if session.config.ai_narration:
+        features.append("AI Narration")
+    if features:
+        return "Game configured with: " + ", ".join(features) + "\nPlayers can now /join!"
+    return "Game configured with default settings.\nPlayers can now /join!"
+
+
+async def record_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Record group chat messages for AI narration context. Respond if @narrator is mentioned."""
+    if update.message is None or update.message.text is None:
+        return
+    cid = update.message.chat_id
+    session = games.get(cid)
+    if not session or not session.config.ai_narration:
+        return
+    name = update.message.from_user.first_name if update.message.from_user else "Unknown"
+    text = update.message.text
+    logger.info(f"Recording message from {name}: {text}")
+    session.narrator.record_message(name, text)
+    if "@narrator" in text.lower():
+        response = await session.narrator.respond(name, text)
+        if response:
+            await context.bot.send_message(cid, f"📖 {response}")
 
 
 async def present_action(bot, session: GameSession):
@@ -282,6 +369,10 @@ async def finish_voting(bot, session: GameSession):
     else:
         voting_text += "The people didn't like the two candidates!"
     await bot.send_message(session.cid, voting_text)
+    await maybe_narrate(bot, session, "vote_passed" if passed else "vote_failed", {
+        "president": pres_name, "chancellor": chan_name,
+        "failed_votes": failed_before + (0 if passed else 1),
+    })
 
     session.engine.step(votes)
     session.pending_votes = {}
@@ -289,11 +380,13 @@ async def finish_voting(bot, session: GameSession):
     # Anarchy messaging must come before game_over check, because anarchy
     # can enact the winning policy and end the game in the same step.
     if not passed and failed_before == 2:
+        anarchy_policy = ("liberal" if session.engine.state.liberal_track > lib_before else "fascist")
         await bot.send_message(session.cid, "ANARCHY!!")
         if session.engine.state.liberal_track > lib_before:
             await bot.send_message(session.cid, "The topmost policy was enacted: liberal")
         elif session.engine.state.fascist_track > fasc_before:
             await bot.send_message(session.cid, "The topmost policy was enacted: fascist")
+        await maybe_narrate(bot, session, "anarchy", {"policy": anarchy_policy})
 
     if session.engine.game_over:
         await end_game(bot, session)
@@ -346,6 +439,11 @@ async def choose_policy(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 await context.bot.send_message(session.cid,
                     f"President {pres_name} and Chancellor {chan_name} enacted a {answer} policy!")
+                await maybe_narrate(context.bot, session, "policy_enacted", {
+                    "president": pres_name, "chancellor": chan_name, "policy": answer,
+                    "liberal_track": session.engine.state.liberal_track,
+                    "fascist_track": session.engine.state.fascist_track,
+                })
                 await asyncio.sleep(3)
                 await context.bot.send_message(session.cid, session.engine.board.print_board())
 
@@ -400,6 +498,9 @@ async def choose_veto(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(session.cid,
                 f"President {pres_name} accepted Chancellor {chan_name}'s Veto. "
                 f"No policy was enacted but this counts as a failed election.")
+            await maybe_narrate(context.bot, session, "veto_accepted", {
+                "president": pres_name, "chancellor": chan_name,
+            })
 
             if failed_before == 2:
                 await context.bot.send_message(session.cid, "ANARCHY!!")
@@ -421,6 +522,9 @@ async def choose_veto(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(session.cid,
                 f"President {pres_name} refused Chancellor {chan_name}'s Veto. "
                 f"The Chancellor now has to choose a policy!")
+            await maybe_narrate(context.bot, session, "veto_refused", {
+                "president": pres_name, "chancellor": chan_name,
+            })
             await present_action(context.bot, session)
     except Exception as e:
         logger.error(f"choose_veto error: {e}")
@@ -446,11 +550,17 @@ async def choose_kill(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if session.engine.game_over:
             await context.bot.send_message(session.cid,
                 f"President {pres_name} killed {target.name}.")
+            await maybe_narrate(context.bot, session, "execution", {
+                "president": pres_name, "target": target.name, "was_hitler": True,
+            })
             await end_game(context.bot, session)
         else:
             await context.bot.send_message(session.cid,
                 f"President {pres_name} killed {target.name} who was not Hitler. "
                 f"{target.name}, you are dead now and are not allowed to talk anymore!")
+            await maybe_narrate(context.bot, session, "execution", {
+                "president": pres_name, "target": target.name, "was_hitler": False,
+            })
             await context.bot.send_message(session.cid, session.engine.board.print_board())
             await present_action(context.bot, session)
     except Exception as e:
@@ -513,6 +623,10 @@ async def inform_players(bot, session):
     await bot.send_message(session.cid,
         f"Let's start the game with {n} players!\n{print_player_info(n)}\n"
         f"Go to your private chat and look at your secret role!")
+    names = [p.name for p in session.engine.players.values()]
+    await maybe_narrate(bot, session, "game_start", {
+        "num_players": n, "players": ", ".join(names),
+    })
     for uid, p in session.engine.players.items():
         await bot.send_message(uid, f"Your secret role is: {p.role}\nYour party membership is: {p.party}")
 
@@ -561,22 +675,20 @@ async def end_game(bot, session, cancelled=False):
     else:
         code = session.engine.end_code
         roles_text = session.print_roles()
-        if code == EndCode.FASCIST_HITLER_CHANCELLOR:
-            await bot.send_message(session.cid,
-                f"Game over! The fascists win by electing Hitler as Chancellor!\n\n{roles_text}")
-            s['fascwin_hitler'] += 1
-        elif code == EndCode.FASCIST_POLICIES:
-            await bot.send_message(session.cid,
-                f"Game over! The fascists win by enacting 6 fascist policies!\n\n{roles_text}")
-            s['fascwin_policies'] += 1
-        elif code == EndCode.LIBERAL_POLICIES:
-            await bot.send_message(session.cid,
-                f"Game over! The liberals win by enacting 5 liberal policies!\n\n{roles_text}")
-            s['libwin_policies'] += 1
-        elif code == EndCode.LIBERAL_KILLED_HITLER:
-            await bot.send_message(session.cid,
-                f"Game over! The liberals win by killing Hitler!\n\n{roles_text}")
-            s['libwin_kill'] += 1
+        results = {
+            EndCode.FASCIST_HITLER_CHANCELLOR: ("The fascists win by electing Hitler as Chancellor!", 'fascwin_hitler'),
+            EndCode.FASCIST_POLICIES: ("The fascists win by enacting 6 fascist policies!", 'fascwin_policies'),
+            EndCode.LIBERAL_POLICIES: ("The liberals win by enacting 5 liberal policies!", 'libwin_policies'),
+            EndCode.LIBERAL_KILLED_HITLER: ("The liberals win by killing Hitler!", 'libwin_kill'),
+        }
+        result_text, stat_key = results[code]
+        await bot.send_message(session.cid, f"Game over! {result_text}\n\n{roles_text}")
+        s[stat_key] += 1
+        await maybe_narrate(bot, session, "game_over", {
+            "result": result_text,
+            "liberal_track": session.engine.state.liberal_track,
+            "fascist_track": session.engine.state.fascist_track,
+        })
 
     stats.save()
 

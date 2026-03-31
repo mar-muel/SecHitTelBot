@@ -1,4 +1,4 @@
-import logging as log
+import logging
 
 import datetime
 
@@ -10,7 +10,7 @@ import stats
 from config import MIN_PLAYERS
 from boardgamebox.player import Player
 
-logger = log.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 # command description used in the "help" command
 commands = [
@@ -141,14 +141,16 @@ async def command_newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif session:
         await context.bot.send_message(cid, "There is currently a game running. If you want to end it please type /cancelgame!")
     else:
-        controller.games[cid] = controller.GameSession(cid, update.message.from_user.id)
+        session = controller.GameSession(cid, update.message.from_user.id)
+        controller.games[cid] = session
         s = stats.get()
         if cid not in s.get("groups", []):
             s.setdefault("groups", []).append(cid)
             stats.save()
-        await context.bot.send_message(cid, "New game created! Each player has to /join the game.\n"
-                              "The initiator of this game (or the admin) can /join too and "
-                              "type /startgame when everyone has joined the game!")
+        await context.bot.send_message(cid, "New game created! Configure experimental features below.")
+        await context.bot.send_message(cid,
+            text=controller._config_text(session),
+            reply_markup=controller._config_markup(session))
 
 
 async def command_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -221,6 +223,8 @@ async def command_startgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Create engine from lobby players, assign roles, set up board
         session.start()
         assert session.engine is not None
+        if session.config.ai_narration:
+            await context.bot.send_message(session.cid, "AI Narration is enabled for this game.")
         await controller.inform_players(context.bot, session)
         await controller.inform_fascists(context.bot, session)
         await context.bot.send_message(session.cid, session.engine.board.print_board())
