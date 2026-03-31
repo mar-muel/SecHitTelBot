@@ -31,3 +31,6 @@ MANIFEST
 
 # Logs
 logs/*.log
+
+# Runtime data
+stats.json
