@@ -5,4 +5,3 @@ class Player(object):
         self.role = None
         self.party = None
         self.is_dead = False
-        self.inspected_players = {}

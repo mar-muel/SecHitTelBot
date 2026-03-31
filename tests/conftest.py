@@ -9,8 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import GamesController
 import MainController
-from Boardgamebox.Board import Board
-from Boardgamebox.Game import Game
+from MainController import GameSession
 from Boardgamebox.Player import Player
 
 MainController.sleep = lambda x: None
@@ -35,51 +34,51 @@ def bot():
     return MagicMock()
 
 
-def _make_game(num_players):
+def _make_session(num_players, seed=None):
+    """Create a GameSession in lobby phase with players added."""
     GamesController.init()
-    game = Game(-999, 1)
+    cid = -999
+    session = GameSession(cid, 100)
     for i in range(num_players):
         uid = 100 + i
-        game.add_player(uid, Player(NAMES[i], uid))
-    GamesController.games[-999] = game
-    return game
+        session.add_player(uid, Player(NAMES[i], uid))
+    GamesController.games[cid] = session
+    return session
 
 
-def _setup_game(bot, num_players):
-    game = _make_game(num_players)
-    MainController.inform_players(bot, game, game.cid, num_players)
-    MainController.inform_fascists(bot, game, num_players)
-    game.board = Board(num_players, game)
-    game.shuffle_player_sequence()
-    game.board.state.player_counter = 0
+def _setup_session(bot, num_players):
+    """Create a fully started GameSession with engine running."""
+    session = _make_session(num_players)
+    session.start()
     bot.reset_mock()
-    return game
+    return session
 
 
 @pytest.fixture(params=[5, 7, 9, 10])
-def game_any(request, bot):
-    return _setup_game(bot, request.param)
+def session_any(request, bot):
+    return _setup_session(bot, request.param)
 
 
 @pytest.fixture
-def game5(bot):
-    return _setup_game(bot, 5)
+def session5(bot):
+    return _setup_session(bot, 5)
 
 
 @pytest.fixture
-def game7(bot):
-    return _setup_game(bot, 7)
+def session7(bot):
+    return _setup_session(bot, 7)
 
 
 @pytest.fixture
-def game9(bot):
-    return _setup_game(bot, 9)
+def session9(bot):
+    return _setup_session(bot, 9)
 
 
 @pytest.fixture
-def game10(bot):
-    return _setup_game(bot, 10)
+def session10(bot):
+    return _setup_session(bot, 10)
 
 
 def sent_texts(bot):
+    """Extract all send_message call args as strings for assertion."""
     return [str(c) for c in bot.send_message.call_args_list]

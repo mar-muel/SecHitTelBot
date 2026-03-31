@@ -6,8 +6,6 @@ readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
     "python-telegram-bot==8.0.0",
-    "requests==2.12.4",
-    "six==1.10.0",
 ]
 
 [dependency-groups]

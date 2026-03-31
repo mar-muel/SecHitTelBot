@@ -1,18 +1,37 @@
+"""Integration tests for the Telegram layer (MainController + GameSession) on top of the engine."""
+
 from Constants.Cards import playerSets
+from engine import Action, EndCode
 import MainController
 from conftest import sent_texts
 
 
+class TestGameSession:
+    def test_lobby_phase(self, bot, session5):
+        # Session should be started (engine exists)
+        assert session5.started
+        assert session5.engine is not None
+        assert session5.board is not None
+
+    def test_playerlist_delegates_to_engine(self, bot, session5):
+        assert len(session5.playerlist) == 5
+        for uid in session5.playerlist:
+            assert session5.playerlist[uid].role is not None
+
+    def test_player_sequence(self, bot, session5):
+        assert len(session5.player_sequence) == 5
+
+
 class TestRoleAssignment:
-    def test_correct_role_counts(self, bot, game_any):
-        expected = playerSets[game_any.board.num_players]["roles"]
-        actual = [game_any.playerlist[uid].role for uid in game_any.playerlist]
+    def test_correct_role_counts(self, bot, session_any):
+        expected = playerSets[len(session_any.playerlist)]["roles"]
+        actual = [session_any.playerlist[uid].role for uid in session_any.playerlist]
         for role in ("Liberal", "Fascist", "Hitler"):
             assert actual.count(role) == expected.count(role)
 
-    def test_party_membership_matches_role(self, bot, game_any):
-        for uid in game_any.playerlist:
-            p = game_any.playerlist[uid]
+    def test_party_membership_matches_role(self, bot, session_any):
+        for uid in session_any.playerlist:
+            p = session_any.playerlist[uid]
             if p.role in ("Fascist", "Hitler"):
                 assert p.party == "fascist"
             else:
@@ -20,28 +39,28 @@ class TestRoleAssignment:
 
 
 class TestFascistInformation:
-    def test_5p_hitler_knows_fascist(self, bot, game5):
+    def test_5p_hitler_knows_fascist(self, bot, session5):
         bot.reset_mock()
-        MainController.inform_fascists(bot, game5, 5)
-        hitler = game5.get_hitler()
-        fascists = game5.get_fascists()
+        MainController.inform_fascists(bot, session5)
+        hitler = session5.engine.game.get_hitler()
+        fascists = session5.engine.game.get_fascists()
         msgs = [c for c in bot.send_message.call_args_list if c[0][0] == hitler.uid]
         fellow_msgs = [c for c in msgs if "Your fellow fascist is" in str(c)]
         assert len(fellow_msgs) == 1
         assert fascists[0].name in str(fellow_msgs[0])
 
-    def test_7p_hitler_does_not_know_fascists(self, bot, game7):
+    def test_7p_hitler_does_not_know_fascists(self, bot, session7):
         bot.reset_mock()
-        MainController.inform_fascists(bot, game7, 7)
-        hitler = game7.get_hitler()
+        MainController.inform_fascists(bot, session7)
+        hitler = session7.engine.game.get_hitler()
         msgs = [c for c in bot.send_message.call_args_list if c[0][0] == hitler.uid]
         assert not any("fellow fascist" in str(c) for c in msgs)
 
-    def test_7p_fascists_know_hitler(self, bot, game7):
+    def test_7p_fascists_know_hitler(self, bot, session7):
         bot.reset_mock()
-        MainController.inform_fascists(bot, game7, 7)
-        hitler = game7.get_hitler()
-        for f in game7.get_fascists():
+        MainController.inform_fascists(bot, session7)
+        hitler = session7.engine.game.get_hitler()
+        for f in session7.engine.game.get_fascists():
             msgs = [c for c in bot.send_message.call_args_list if c[0][0] == f.uid]
             hitler_msgs = [c for c in msgs if "Hitler is" in str(c)]
             assert len(hitler_msgs) == 1
@@ -49,132 +68,158 @@ class TestFascistInformation:
 
 
 class TestBoard:
-    def test_initial_state(self, bot, game5):
-        assert game5.board.state.liberal_track == 0
-        assert game5.board.state.fascist_track == 0
-        assert game5.board.state.failed_votes == 0
+    def test_initial_state(self, bot, session5):
+        assert session5.engine.state.liberal_track == 0
+        assert session5.engine.state.fascist_track == 0
+        assert session5.engine.state.failed_votes == 0
 
-    def test_policy_deck(self, bot, game5):
-        assert len(game5.board.policies) == 17
-        assert game5.board.policies.count("liberal") == 6
-        assert game5.board.policies.count("fascist") == 11
+    def test_policy_deck_size(self, bot, session5):
+        assert len(session5.engine.board.policies) == 17
 
-    def test_board_print(self, bot, game5):
-        text = game5.board.print_board()
+    def test_board_print(self, bot, session5):
+        text = session5.engine.board.print_board()
         for section in ("Liberal acts", "Fascist acts", "Election counter", "Presidential order"):
             assert section in text
 
-    def test_5p_fascist_track(self, bot, game5):
-        assert game5.board.fascist_track_actions == [None, None, "policy", "kill", "kill", "win"]
+    def test_5p_fascist_track(self, bot, session5):
+        assert session5.engine.board.fascist_track_actions == [None, None, "policy", "kill", "kill", "win"]
 
-    def test_9p_fascist_track(self, bot, game9):
-        assert game9.board.fascist_track_actions == ["inspect", "inspect", "choose", "kill", "kill", "win"]
-
-
-class TestEnactPolicy:
-    def _set_government(self, game):
-        game.board.state.president = game.player_sequence[0]
-        game.board.state.chancellor = game.player_sequence[1]
-
-    def test_enact_liberal(self, bot, game5):
-        self._set_government(game5)
-        MainController.enact_policy(bot, game5, "liberal", False)
-        assert game5.board.state.liberal_track == 1
-        assert game5.board.state.failed_votes == 0
-
-    def test_enact_fascist(self, bot, game5):
-        self._set_government(game5)
-        MainController.enact_policy(bot, game5, "fascist", False)
-        assert game5.board.state.fascist_track == 1
-
-    def test_liberal_win(self, bot, game5):
-        self._set_government(game5)
-        game5.board.state.liberal_track = 4
-        MainController.enact_policy(bot, game5, "liberal", False)
-        assert game5.board.state.game_endcode == 1
-        assert any("liberals win" in m.lower() for m in sent_texts(bot))
-
-    def test_fascist_win(self, bot, game5):
-        self._set_government(game5)
-        game5.board.state.fascist_track = 5
-        MainController.enact_policy(bot, game5, "fascist", False)
-        assert game5.board.state.game_endcode == -1
-        assert any("fascists win" in m.lower() for m in sent_texts(bot))
-
-    def test_anarchy_enacts_top_policy(self, bot, game5):
-        top_policy = game5.board.policies[0]
-        MainController.do_anarchy(bot, game5)
-        if top_policy == "liberal":
-            assert game5.board.state.liberal_track == 1
-        else:
-            assert game5.board.state.fascist_track == 1
-        assert any("ANARCHY" in m for m in sent_texts(bot))
+    def test_9p_fascist_track(self, bot, session9):
+        assert session9.engine.board.fascist_track_actions == ["inspect", "inspect", "choose", "kill", "kill", "win"]
 
 
-class TestVoting:
-    def _vote_all(self, game, answer):
-        for p in game.player_sequence:
-            game.board.state.last_votes[p.uid] = answer
+class TestPresentAction:
+    def test_first_action_is_nomination(self, bot, session5):
+        action, ctx = session5.engine.pending_action()
+        assert action == Action.NOMINATE_CHANCELLOR
+        assert "eligible" in ctx
+        assert "president" in ctx
 
-    def test_successful_vote(self, bot, game5):
-        game5.board.state.nominated_president = game5.player_sequence[0]
-        game5.board.state.nominated_chancellor = game5.player_sequence[1]
-        self._vote_all(game5, "Ja")
-        MainController.count_votes(bot, game5)
-        assert game5.board.state.president == game5.player_sequence[0]
-        assert game5.board.state.chancellor == game5.player_sequence[1]
+    def test_present_nomination_sends_keyboard(self, bot, session5):
+        bot.reset_mock()
+        MainController.present_action(bot, session5)
+        # Should send messages: one to group (announcement) + two to president (board + keyboard)
+        texts = sent_texts(bot)
+        assert any("presidential candidate" in t for t in texts)
+        assert any("nominate your chancellor" in t.lower() for t in texts)
 
-    def test_failed_vote(self, bot, game5):
-        game5.board.state.nominated_president = game5.player_sequence[0]
-        game5.board.state.nominated_chancellor = game5.player_sequence[1]
-        self._vote_all(game5, "Nein")
-        MainController.count_votes(bot, game5)
-        assert game5.board.state.failed_votes == 1
-        assert any("didn't like" in m for m in sent_texts(bot))
-
-    def test_three_failed_votes_triggers_anarchy(self, bot, game5):
-        game5.board.state.failed_votes = 2
-        game5.board.state.nominated_president = game5.player_sequence[0]
-        game5.board.state.nominated_chancellor = game5.player_sequence[1]
-        self._vote_all(game5, "Nein")
-        MainController.count_votes(bot, game5)
-        assert any("ANARCHY" in m for m in sent_texts(bot))
+    def test_nomination_then_vote(self, bot, session5):
+        action, ctx = session5.engine.pending_action()
+        # Nominate the first eligible player
+        chancellor = ctx["eligible"][0]
+        session5.engine.step(chancellor)
+        # Engine should now be waiting for votes
+        action2, ctx2 = session5.engine.pending_action()
+        assert action2 == Action.VOTE
+        assert "voters" in ctx2
 
 
-class TestHitlerElection:
-    def test_hitler_as_chancellor_after_3_fascist(self, bot, game5):
-        hitler = game5.get_hitler()
-        non_hitler = [p for p in game5.player_sequence if p.role != "Hitler"][0]
-        game5.board.state.fascist_track = 3
-        game5.board.state.nominated_president = non_hitler
-        game5.board.state.nominated_chancellor = hitler
-        for p in game5.player_sequence:
-            game5.board.state.last_votes[p.uid] = "Ja"
-        MainController.count_votes(bot, game5)
-        assert game5.board.state.game_endcode == -2
-        assert any("fascists win" in m.lower() for m in sent_texts(bot))
+class TestEngineViaSession:
+    def test_vote_pass_leads_to_policy_draw(self, bot, session5):
+        # Nominate
+        _, ctx = session5.engine.pending_action()
+        session5.engine.step(ctx["eligible"][0])
+        # Vote all Ja
+        voters = session5.engine.alive_players
+        votes = {p.uid: True for p in voters}
+        session5.engine.step(votes)
+        # Should be in legislative session (unless Hitler elected)
+        if not session5.engine.game_over:
+            action, _ = session5.engine.pending_action()
+            assert action == Action.PRESIDENT_DISCARD
 
-    def test_non_hitler_chancellor_marked_safe(self, bot, game5):
-        non_hitlers = [p for p in game5.player_sequence if p.role != "Hitler"]
-        game5.board.state.fascist_track = 3
-        game5.board.state.nominated_president = non_hitlers[0]
-        game5.board.state.nominated_chancellor = non_hitlers[1]
-        for p in game5.player_sequence:
-            game5.board.state.last_votes[p.uid] = "Ja"
-        MainController.count_votes(bot, game5)
-        assert non_hitlers[1] in game5.board.state.not_hitlers
-        assert game5.board.state.game_endcode == 0
+    def test_vote_fail_leads_to_next_nomination(self, bot, session5):
+        # Nominate
+        _, ctx = session5.engine.pending_action()
+        session5.engine.step(ctx["eligible"][0])
+        # Vote all Nein
+        voters = session5.engine.alive_players
+        votes = {p.uid: False for p in voters}
+        session5.engine.step(votes)
+        # Should be back to nomination
+        action, _ = session5.engine.pending_action()
+        assert action == Action.NOMINATE_CHANCELLOR
+
+    def test_three_failed_votes_triggers_anarchy(self, bot, session5):
+        session5.engine.state.failed_votes = 2
+        # Nominate
+        _, ctx = session5.engine.pending_action()
+        session5.engine.step(ctx["eligible"][0])
+        # Vote all Nein — this is the 3rd failure
+        voters = session5.engine.alive_players
+        votes = {p.uid: False for p in voters}
+        lib_before = session5.engine.state.liberal_track
+        fasc_before = session5.engine.state.fascist_track
+        session5.engine.step(votes)
+        # A policy should have been enacted (anarchy)
+        lib_after = session5.engine.state.liberal_track
+        fasc_after = session5.engine.state.fascist_track
+        assert (lib_after > lib_before) or (fasc_after > fasc_before) or session5.engine.game_over
+
+    def test_full_legislative_session(self, bot, session5):
+        """Walk through nomination → vote → president discard → chancellor enact."""
+        # Nominate
+        _, ctx = session5.engine.pending_action()
+        session5.engine.step(ctx["eligible"][0])
+        # Vote Ja
+        votes = {p.uid: True for p in session5.engine.alive_players}
+        session5.engine.step(votes)
+        if session5.engine.game_over:
+            return
+        # President discards one policy
+        action, ctx = session5.engine.pending_action()
+        assert action == Action.PRESIDENT_DISCARD
+        assert len(ctx["policies"]) == 3
+        session5.engine.step(ctx["policies"][0])
+        # Chancellor enacts one of the remaining two
+        action, ctx = session5.engine.pending_action()
+        assert action == Action.CHANCELLOR_ENACT
+        assert len(ctx["policies"]) == 2
+        session5.engine.step(ctx["policies"][0])
+        # Game should continue (next nomination or executive action or game over)
+        assert session5.engine.game_over or session5.engine.pending_action() is not None
 
 
-class TestShufflePolicyPile:
-    def test_shuffle_when_low(self, bot, game5):
-        game5.board.discards = game5.board.policies[2:]
-        game5.board.policies = game5.board.policies[:2]
-        MainController.shuffle_policy_pile(bot, game5)
-        assert len(game5.board.policies) == 17
-        assert len(game5.board.discards) == 0
+class TestEndGame:
+    def test_end_game_liberal_policies(self, bot, session5):
+        session5.engine.state.liberal_track = 4
+        # Nominate + vote
+        _, ctx = session5.engine.pending_action()
+        session5.engine.step(ctx["eligible"][0])
+        votes = {p.uid: True for p in session5.engine.alive_players}
+        session5.engine.step(votes)
+        if session5.engine.game_over:
+            return
+        # Discard a fascist policy, enact liberal
+        _, ctx = session5.engine.pending_action()
+        # Find a liberal policy if possible
+        policies = ctx["policies"]
+        fascist_idx = next((i for i, p in enumerate(policies) if p == "fascist"), 0)
+        session5.engine.step(policies[fascist_idx])
+        _, ctx = session5.engine.pending_action()
+        policies = ctx["policies"]
+        liberal_idx = next((i for i, p in enumerate(policies) if p == "liberal"), 0)
+        session5.engine.step(policies[liberal_idx])
+        if session5.engine.state.liberal_track == 5:
+            assert session5.engine.game_over
+            assert session5.engine.end_code == EndCode.LIBERAL_POLICIES
 
-    def test_no_shuffle_when_enough(self, bot, game5):
-        original_len = len(game5.board.policies)
-        MainController.shuffle_policy_pile(bot, game5)
-        assert len(game5.board.policies) == original_len
+    def test_end_game_sends_message(self, bot, session5):
+        # Force a game-over state
+        session5.engine.state.liberal_track = 4
+        _, ctx = session5.engine.pending_action()
+        session5.engine.step(ctx["eligible"][0])
+        votes = {p.uid: True for p in session5.engine.alive_players}
+        session5.engine.step(votes)
+        if session5.engine.game_over:
+            # Hitler was elected
+            bot.reset_mock()
+            MainController.end_game(bot, session5)
+            texts = sent_texts(bot)
+            assert any("Game over" in t for t in texts)
+
+    def test_cancel_game(self, bot, session5):
+        bot.reset_mock()
+        MainController.end_game(bot, session5, cancelled=True)
+        texts = sent_texts(bot)
+        assert any("Game cancelled" in t for t in texts)

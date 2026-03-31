@@ -11,7 +11,6 @@ class Board(object):
         self.policies = random.sample(policies, len(policies))
         self.game = game
         self.discards = []
-        self.previous = []
 
     def print_board(self):
         board = "--- Liberal acts ---\n"

@@ -9,9 +9,6 @@ class State(object):
         self.nominated_chancellor = None
         self.chosen_president = None
         self.chancellor = None
-        self.dead = 0
-        self.last_votes = {}
-        self.game_endcode = 0
         self.drawn_policies = []
         self.player_counter = 0
         self.veto_refused = False
