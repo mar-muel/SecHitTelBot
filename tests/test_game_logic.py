@@ -1,9 +1,9 @@
 """Integration tests for the Telegram layer (MainController + GameSession) on top of the engine."""
 
 import pytest
-from Constants.Cards import playerSets
+from constants.cards import PLAYER_SETS
 from engine import Action, EndCode
-import MainController
+import controller
 from conftest import sent_texts
 
 
@@ -25,7 +25,7 @@ class TestGameSession:
 
 class TestRoleAssignment:
     def test_correct_role_counts(self, bot, session_any):
-        expected = playerSets[len(session_any.playerlist)]["roles"]
+        expected = PLAYER_SETS[len(session_any.playerlist)]["roles"]
         actual = [session_any.playerlist[uid].role for uid in session_any.playerlist]
         for role in ("Liberal", "Fascist", "Hitler"):
             assert actual.count(role) == expected.count(role)
@@ -43,7 +43,7 @@ class TestFascistInformation:
     @pytest.mark.asyncio
     async def test_5p_hitler_knows_fascist(self, bot, session5):
         bot.reset_mock()
-        await MainController.inform_fascists(bot, session5)
+        await controller.inform_fascists(bot, session5)
         hitler = session5.engine.game.get_hitler()
         fascists = session5.engine.game.get_fascists()
         msgs = [c for c in bot.send_message.call_args_list if c[0][0] == hitler.uid]
@@ -54,7 +54,7 @@ class TestFascistInformation:
     @pytest.mark.asyncio
     async def test_7p_hitler_does_not_know_fascists(self, bot, session7):
         bot.reset_mock()
-        await MainController.inform_fascists(bot, session7)
+        await controller.inform_fascists(bot, session7)
         hitler = session7.engine.game.get_hitler()
         msgs = [c for c in bot.send_message.call_args_list if c[0][0] == hitler.uid]
         assert not any("fellow fascist" in str(c) for c in msgs)
@@ -62,7 +62,7 @@ class TestFascistInformation:
     @pytest.mark.asyncio
     async def test_7p_fascists_know_hitler(self, bot, session7):
         bot.reset_mock()
-        await MainController.inform_fascists(bot, session7)
+        await controller.inform_fascists(bot, session7)
         hitler = session7.engine.game.get_hitler()
         for f in session7.engine.game.get_fascists():
             msgs = [c for c in bot.send_message.call_args_list if c[0][0] == f.uid]
@@ -102,7 +102,7 @@ class TestPresentAction:
     @pytest.mark.asyncio
     async def test_present_nomination_sends_keyboard(self, bot, session5):
         bot.reset_mock()
-        await MainController.present_action(bot, session5)
+        await controller.present_action(bot, session5)
         # Should send messages: one to group (announcement) + two to president (board + keyboard)
         texts = sent_texts(bot)
         assert any("presidential candidate" in t for t in texts)
@@ -220,13 +220,13 @@ class TestEndGame:
         if session5.engine.game_over:
             # Hitler was elected
             bot.reset_mock()
-            await MainController.end_game(bot, session5)
+            await controller.end_game(bot, session5)
             texts = sent_texts(bot)
             assert any("Game over" in t for t in texts)
 
     @pytest.mark.asyncio
     async def test_cancel_game(self, bot, session5):
         bot.reset_mock()
-        await MainController.end_game(bot, session5, cancelled=True)
+        await controller.end_game(bot, session5, cancelled=True)
         texts = sent_texts(bot)
         assert any("Game cancelled" in t for t in texts)

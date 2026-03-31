@@ -1,7 +1,7 @@
 from random import shuffle
 
-from Boardgamebox.Board import Board
-from Boardgamebox.Player import Player
+from boardgamebox.board import Board
+from boardgamebox.player import Player
 
 
 class Game:

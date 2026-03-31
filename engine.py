@@ -4,10 +4,10 @@ import random
 from random import randrange
 from enum import Enum, auto
 
-from Constants.Cards import playerSets
-from Boardgamebox.Board import Board
-from Boardgamebox.Game import Game
-from Boardgamebox.Player import Player
+from constants.cards import PLAYER_SETS
+from boardgamebox.board import Board
+from boardgamebox.game import Game
+from boardgamebox.player import Player
 
 
 class GameOver(Exception):
@@ -154,7 +154,7 @@ class GameEngine:
         return result
 
     def _assign_roles(self, num_players: int) -> None:
-        available = list(playerSets[num_players]["roles"])
+        available = list(PLAYER_SETS[num_players]["roles"])
         for uid in self.game.playerlist:
             idx = randrange(len(available))
             role = available.pop(idx)

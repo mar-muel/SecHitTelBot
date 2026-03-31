@@ -1,28 +1,23 @@
 import sys
 import os
-import json
-from unittest.mock import AsyncMock, mock_open, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import GamesController
-from MainController import GameSession
-from Boardgamebox.Player import Player
-
-FAKE_STATS = json.dumps({
-    "libwin_policies": 0, "libwin_kill": 0,
-    "fascwin_policies": 0, "fascwin_hitler": 0,
-    "cancelled": 0, "groups": []
-})
+import stats
+import controller
+from controller import GameSession
+from boardgamebox.player import Player
 
 NAMES = ["Alice", "Bob", "Charlie", "Diana", "Eve", "Frank", "Grace", "Hank", "Ivy", "Jack"]
 
 
 @pytest.fixture(autouse=True)
 def mock_stats():
-    with patch("builtins.open", mock_open(read_data=FAKE_STATS)):
+    stats._data = stats._defaults()
+    with patch.object(stats, "save"):
         yield
 
 
@@ -39,13 +34,13 @@ def bot():
 
 def _make_session(num_players, seed=None):
     """Create a GameSession in lobby phase with players added."""
-    GamesController.games.clear()
+    controller.games.clear()
     cid = -999
     session = GameSession(cid, 100)
     for i in range(num_players):
         uid = 100 + i
         session.add_player(uid, Player(NAMES[i], uid))
-    GamesController.games[cid] = session
+    controller.games[cid] = session
     return session
 
 

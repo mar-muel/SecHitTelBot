@@ -3,27 +3,22 @@
 """Telegram UI layer for Secret Hitler. All game logic lives in engine.py."""
 
 import asyncio
-import json
 import logging as log
 import re
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import ContextTypes
 
-import Commands
-from Constants.Config import TOKEN, STATS
-from Boardgamebox.Game import Game
-from Boardgamebox.Player import Player
+import stats
+from boardgamebox.game import Game
 from engine import GameEngine, Action, EndCode
-import GamesController
 
 import datetime
 
-log.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                level=log.INFO,
-                filename='logs/logging.log')
 
 logger = log.getLogger(__name__)
+
+games: dict[int, GameSession] = {}
 
 
 class GameSession:
@@ -218,7 +213,7 @@ async def nominate_chosen_chancellor(update: Update, context: ContextTypes.DEFAU
     cid = int(regex.group(1))
     chosen_uid = int(regex.group(2))
     try:
-        session = GamesController.games[cid]
+        session = games[cid]
         assert session.engine is not None
         chosen = session.engine.players[chosen_uid]
         assert session.engine.state.nominated_president is not None
@@ -229,7 +224,7 @@ async def nominate_chosen_chancellor(update: Update, context: ContextTypes.DEFAU
         session.engine.step(chosen)
         await present_action(context.bot, session)
     except Exception as e:
-        log.error(f"nominate_chosen_chancellor error: {e}")
+        logger.error(f"nominate_chosen_chancellor error: {e}")
 
 
 async def handle_voting(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -241,7 +236,7 @@ async def handle_voting(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cid = int(regex.group(1))
     answer = regex.group(2)
     try:
-        session = GamesController.games[cid]
+        session = games[cid]
         assert session.engine is not None
         uid = callback.from_user.id
         _, ctx = session.engine.pending_action()  # type: ignore[misc]
@@ -257,7 +252,7 @@ async def handle_voting(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(session.pending_votes) == len(session.engine.alive_players):
             await finish_voting(context.bot, session)
     except Exception as e:
-        log.error(f"handle_voting error: {e}")
+        logger.error(f"handle_voting error: {e}")
 
 
 async def finish_voting(bot, session: GameSession):
@@ -320,7 +315,7 @@ async def choose_policy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cid = int(regex.group(1))
     answer = regex.group(2)
     try:
-        session = GamesController.games[cid]
+        session = games[cid]
         assert session.engine is not None
         uid = callback.from_user.id
         action, ctx = session.engine.pending_action()  # type: ignore[misc]
@@ -376,7 +371,7 @@ async def choose_policy(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await asyncio.sleep(3)
                 await present_action(context.bot, session)
     except Exception as e:
-        log.error(f"choose_policy error: {e}")
+        logger.error(f"choose_policy error: {e}")
 
 
 async def choose_veto(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -388,7 +383,7 @@ async def choose_veto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cid = int(regex.group(1))
     answer = regex.group(2)
     try:
-        session = GamesController.games[cid]
+        session = games[cid]
         assert session.engine is not None
         uid = callback.from_user.id
         pres_name = session.engine.current_president.name
@@ -428,7 +423,7 @@ async def choose_veto(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"The Chancellor now has to choose a policy!")
             await present_action(context.bot, session)
     except Exception as e:
-        log.error(f"choose_veto error: {e}")
+        logger.error(f"choose_veto error: {e}")
 
 
 async def choose_kill(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -440,7 +435,7 @@ async def choose_kill(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cid = int(regex.group(1))
     target_uid = int(regex.group(2))
     try:
-        session = GamesController.games[cid]
+        session = games[cid]
         assert session.engine is not None
         target = session.engine.players[target_uid]
         pres_name = session.engine.current_president.name
@@ -459,7 +454,7 @@ async def choose_kill(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(session.cid, session.engine.board.print_board())
             await present_action(context.bot, session)
     except Exception as e:
-        log.error(f"choose_kill error: {e}")
+        logger.error(f"choose_kill error: {e}")
 
 
 async def choose_inspect(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -471,7 +466,7 @@ async def choose_inspect(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cid = int(regex.group(1))
     target_uid = int(regex.group(2))
     try:
-        session = GamesController.games[cid]
+        session = games[cid]
         assert session.engine is not None
         target = session.engine.players[target_uid]
         pres_name = session.engine.current_president.name
@@ -483,7 +478,7 @@ async def choose_inspect(update: Update, context: ContextTypes.DEFAULT_TYPE):
         session.engine.step(target)
         await present_action(context.bot, session)
     except Exception as e:
-        log.error(f"choose_inspect error: {e}")
+        logger.error(f"choose_inspect error: {e}")
 
 
 async def choose_choose(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -495,7 +490,7 @@ async def choose_choose(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cid = int(regex.group(1))
     target_uid = int(regex.group(2))
     try:
-        session = GamesController.games[cid]
+        session = games[cid]
         assert session.engine is not None
         target = session.engine.players[target_uid]
         pres_name = session.engine.current_president.name
@@ -506,7 +501,7 @@ async def choose_choose(update: Update, context: ContextTypes.DEFAULT_TYPE):
         session.engine.step(target)
         await present_action(context.bot, session)
     except Exception as e:
-        log.error(f"choose_choose error: {e}")
+        logger.error(f"choose_choose error: {e}")
 
 
 ##
@@ -554,13 +549,12 @@ def print_player_info(player_number):
 
 
 async def end_game(bot, session, cancelled=False):
-    with open(STATS, 'r') as f:
-        stats = json.load(f)
+    s = stats.get()
 
     if cancelled:
         if session.started:
             await bot.send_message(session.cid, f"Game cancelled!\n\n{session.print_roles()}")
-            stats['cancelled'] = stats['cancelled'] + 1
+            s['cancelled'] += 1
         else:
             await bot.send_message(session.cid, "Game cancelled!")
     else:
@@ -569,62 +563,27 @@ async def end_game(bot, session, cancelled=False):
         if code == EndCode.FASCIST_HITLER_CHANCELLOR:
             await bot.send_message(session.cid,
                 f"Game over! The fascists win by electing Hitler as Chancellor!\n\n{roles_text}")
-            stats['fascwin_hitler'] += 1
+            s['fascwin_hitler'] += 1
         elif code == EndCode.FASCIST_POLICIES:
             await bot.send_message(session.cid,
                 f"Game over! The fascists win by enacting 6 fascist policies!\n\n{roles_text}")
-            stats['fascwin_policies'] += 1
+            s['fascwin_policies'] += 1
         elif code == EndCode.LIBERAL_POLICIES:
             await bot.send_message(session.cid,
                 f"Game over! The liberals win by enacting 5 liberal policies!\n\n{roles_text}")
-            stats['libwin_policies'] += 1
+            s['libwin_policies'] += 1
         elif code == EndCode.LIBERAL_KILLED_HITLER:
             await bot.send_message(session.cid,
                 f"Game over! The liberals win by killing Hitler!\n\n{roles_text}")
-            stats['libwin_kill'] += 1
+            s['libwin_kill'] += 1
 
-    with open(STATS, 'w') as f:
-        json.dump(stats, f)
+    stats.save()
 
-    if session.cid in GamesController.games:
-        del GamesController.games[session.cid]
+    if session.cid in games:
+        del games[session.cid]
 
 
 async def error_handler(update, context: ContextTypes.DEFAULT_TYPE):
     logger.warning(f'Update "{update}" caused error "{context.error}"')
 
 
-def main():
-    GamesController.games.clear()
-
-    app = Application.builder().token(TOKEN).build()
-
-    app.add_handler(CommandHandler("start", Commands.command_start))
-    app.add_handler(CommandHandler("help", Commands.command_help))
-    app.add_handler(CommandHandler("board", Commands.command_board))
-    app.add_handler(CommandHandler("rules", Commands.command_rules))
-    app.add_handler(CommandHandler("ping", Commands.command_ping))
-    app.add_handler(CommandHandler("symbols", Commands.command_symbols))
-    app.add_handler(CommandHandler("stats", Commands.command_stats))
-    app.add_handler(CommandHandler("newgame", Commands.command_newgame))
-    app.add_handler(CommandHandler("startgame", Commands.command_startgame))
-    app.add_handler(CommandHandler("cancelgame", Commands.command_cancelgame))
-    app.add_handler(CommandHandler("join", Commands.command_join))
-    app.add_handler(CommandHandler("votes", Commands.command_votes))
-    app.add_handler(CommandHandler("calltovote", Commands.command_calltovote))
-
-    app.add_handler(CallbackQueryHandler(pattern="(-[0-9]*)_chan_(.*)", callback=nominate_chosen_chancellor))
-    app.add_handler(CallbackQueryHandler(pattern="(-[0-9]*)_insp_(.*)", callback=choose_inspect))
-    app.add_handler(CallbackQueryHandler(pattern="(-[0-9]*)_choo_(.*)", callback=choose_choose))
-    app.add_handler(CallbackQueryHandler(pattern="(-[0-9]*)_kill_(.*)", callback=choose_kill))
-    app.add_handler(CallbackQueryHandler(pattern="(-[0-9]*)_(yesveto|noveto)", callback=choose_veto))
-    app.add_handler(CallbackQueryHandler(pattern="(-[0-9]*)_(liberal|fascist|veto)", callback=choose_policy))
-    app.add_handler(CallbackQueryHandler(pattern="(-[0-9]*)_(Ja|Nein)", callback=handle_voting))
-
-    app.add_error_handler(error_handler)
-
-    app.run_polling()
-
-
-if __name__ == '__main__':
-    main()

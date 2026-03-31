@@ -1,4 +1,4 @@
-playerSets = {
+PLAYER_SETS = {
     # only for testing purposes
     3: {
         "roles": [
@@ -151,7 +151,7 @@ playerSets = {
     },
 }
 
-policies = [
+POLICIES = [
         "liberal",
         "liberal",
         "liberal",

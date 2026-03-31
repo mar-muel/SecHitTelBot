@@ -1,4 +1,4 @@
-from Boardgamebox.Player import Player
+from boardgamebox.player import Player
 
 
 class State:

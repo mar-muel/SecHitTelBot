@@ -30,12 +30,12 @@ Requires Python 3.14+ and [uv](https://docs.astral.sh/uv/).
 
 ```sh
 uv run pytest tests/ -q    # run tests
-uv run pyright              # type check
+uv run pyright             # type check
 ```
 
 ## Changelog
 
-### v2.0 (2026)
+### v2.0 (Apr 2026)
 - Forked from [julianschritt/SecretHitlerBot](https://github.com/julianschritt/SecretHitlerBot)
 - Refactored game engine
 - Upgraded `python-telegram-bot` (v22) and Python version (3.14)

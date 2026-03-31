@@ -4,8 +4,8 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from engine import Action, EndCode
-import MainController
-import GamesController
+import controller
+import controller
 from conftest import sent_texts
 
 
@@ -90,7 +90,7 @@ class TestPresentActionAllBranches:
     @pytest.mark.asyncio
     async def test_present_nomination(self, bot, session5):
         bot.reset_mock()
-        await MainController.present_action(bot, session5)
+        await controller.present_action(bot, session5)
         texts = sent_texts(bot)
         assert any("presidential candidate" in t for t in texts)
         assert any("nominate your chancellor" in t.lower() for t in texts)
@@ -99,7 +99,7 @@ class TestPresentActionAllBranches:
     async def test_present_vote(self, bot, session5):
         step_to_vote(session5)
         bot.reset_mock()
-        await MainController.present_action(bot, session5)
+        await controller.present_action(bot, session5)
         texts = sent_texts(bot)
         assert any("Do you want to elect" in t for t in texts)
         assert session5.dateinitvote is not None
@@ -109,7 +109,7 @@ class TestPresentActionAllBranches:
     async def test_vote_sends_buttons_to_all_alive(self, bot, session5):
         step_to_vote(session5)
         bot.reset_mock()
-        await MainController.present_action(bot, session5)
+        await controller.present_action(bot, session5)
         # Every alive player should get a vote prompt
         alive_uids = {p.uid for p in session5.engine.alive_players}
         messaged_uids = {c[0][0] for c in bot.send_message.call_args_list}
@@ -123,7 +123,7 @@ class TestPresentActionAllBranches:
         if session5.engine.game_over:
             return
         bot.reset_mock()
-        await MainController.present_action(bot, session5)
+        await controller.present_action(bot, session5)
         texts = sent_texts(bot)
         assert any("Which one do you want to discard" in t for t in texts)
 
@@ -133,7 +133,7 @@ class TestPresentActionAllBranches:
         if session5.engine.game_over:
             return
         bot.reset_mock()
-        await MainController.present_action(bot, session5)
+        await controller.present_action(bot, session5)
         texts = sent_texts(bot)
         assert any("Which one do you want to enact" in t for t in texts)
 
@@ -149,7 +149,7 @@ class TestPresentActionAllBranches:
         assert action == Action.CHANCELLOR_ENACT
         assert ctx["can_veto"] is False
         bot.reset_mock()
-        await MainController.present_action(bot, session5)
+        await controller.present_action(bot, session5)
         texts = sent_texts(bot)
         assert any("refused your Veto" in t for t in texts)
 
@@ -158,7 +158,7 @@ class TestPresentActionAllBranches:
         if not step_to_veto_choice(session5):
             return
         bot.reset_mock()
-        await MainController.present_action(bot, session5)
+        await controller.present_action(bot, session5)
         texts = sent_texts(bot)
         assert any("suggested a Veto" in t for t in texts)
 
@@ -173,7 +173,7 @@ class TestPresentActionAllBranches:
             "choices": others,
         })
         bot.reset_mock()
-        await MainController.present_action(bot, session5)
+        await controller.present_action(bot, session5)
         texts = sent_texts(bot)
         assert any("Execution" in t for t in texts)
         assert any("kill one person" in t.lower() for t in texts)
@@ -188,7 +188,7 @@ class TestPresentActionAllBranches:
             "choices": others,
         })
         bot.reset_mock()
-        await MainController.present_action(bot, session5)
+        await controller.present_action(bot, session5)
         texts = sent_texts(bot)
         assert any("Investigate Loyalty" in t for t in texts)
         assert any("party membership" in t for t in texts)
@@ -203,7 +203,7 @@ class TestPresentActionAllBranches:
             "choices": others,
         })
         bot.reset_mock()
-        await MainController.present_action(bot, session5)
+        await controller.present_action(bot, session5)
         texts = sent_texts(bot)
         assert any("Special Election" in t for t in texts)
         assert any("next presidential candidate" in t for t in texts)
@@ -214,11 +214,11 @@ class TestPresentActionAllBranches:
         # Force game over
         session5.engine.end_code = EndCode.LIBERAL_POLICIES
         bot.reset_mock()
-        await MainController.present_action(bot, session5)
+        await controller.present_action(bot, session5)
         texts = sent_texts(bot)
         assert any("Game over" in t for t in texts)
-        # Session should be removed from GamesController
-        assert session5.cid not in GamesController.games
+        # Session should be removed from controller.games
+        assert session5.cid not in controller.games
 
 
 # =============================================================================
@@ -234,7 +234,7 @@ class TestNominateCallback:
 
         update, context = make_callback(f"{session5.cid}_chan_{chosen.uid}", president.uid)
         context.bot = bot
-        await MainController.nominate_chosen_chancellor(update, context)
+        await controller.nominate_chosen_chancellor(update, context)
 
         # Engine should have advanced to VOTE
         action, _ = session5.engine.pending_action()
@@ -249,7 +249,7 @@ class TestNominateCallback:
         update, context = make_callback(f"{session5.cid}_chan_{chosen.uid}", president.uid)
         context.bot = bot
         bot.reset_mock()
-        await MainController.nominate_chosen_chancellor(update, context)
+        await controller.nominate_chosen_chancellor(update, context)
 
         # Confirmation edit to president
         update.callback_query.edit_message_text.assert_called_once()
@@ -273,7 +273,7 @@ class TestVotingCallbacks:
 
         update, context = make_callback(f"{session5.cid}_Ja", voter.uid)
         context.bot = bot
-        await MainController.handle_voting(update, context)
+        await controller.handle_voting(update, context)
 
         assert voter.uid in session5.pending_votes
         assert session5.pending_votes[voter.uid] is True
@@ -289,13 +289,13 @@ class TestVotingCallbacks:
 
         update_ja, ctx_ja = make_callback(f"{session5.cid}_Ja", voter.uid)
         ctx_ja.bot = bot
-        await MainController.handle_voting(update_ja, ctx_ja)
+        await controller.handle_voting(update_ja, ctx_ja)
         assert session5.pending_votes[voter.uid] is True
 
         # Second vote with Nein — should be ignored
         update_nein, ctx_nein = make_callback(f"{session5.cid}_Nein", voter.uid)
         ctx_nein.bot = bot
-        await MainController.handle_voting(update_nein, ctx_nein)
+        await controller.handle_voting(update_nein, ctx_nein)
         assert session5.pending_votes[voter.uid] is True  # still Ja
 
     @pytest.mark.asyncio
@@ -306,7 +306,7 @@ class TestVotingCallbacks:
         for voter in ctx["voters"]:
             update, context = make_callback(f"{session5.cid}_Ja", voter.uid)
             context.bot = bot
-            await MainController.handle_voting(update, context)
+            await controller.handle_voting(update, context)
 
         # Vote passed — engine should advance past VOTE
         if not session5.engine.game_over:
@@ -323,7 +323,7 @@ class TestVotingCallbacks:
         for voter in ctx["voters"]:
             update, context = make_callback(f"{session5.cid}_Nein", voter.uid)
             context.bot = bot
-            await MainController.handle_voting(update, context)
+            await controller.handle_voting(update, context)
 
         # Vote failed — engine should be back at nomination
         action, _ = session5.engine.pending_action()
@@ -340,7 +340,7 @@ class TestVotingCallbacks:
         for voter in ctx["voters"]:
             update, context = make_callback(f"{session5.cid}_Nein", voter.uid)
             context.bot = bot
-            await MainController.handle_voting(update, context)
+            await controller.handle_voting(update, context)
 
         texts = sent_texts(bot)
         assert any("ANARCHY" in t for t in texts)
@@ -356,7 +356,7 @@ class TestVotingCallbacks:
         update, context = make_callback(f"{session5.cid}_Ja", voter.uid)
         context.bot = bot
         bot.reset_mock()
-        await MainController.handle_voting(update, context)
+        await controller.handle_voting(update, context)
 
         update.callback_query.edit_message_text.assert_called_once()
         edit_text = str(update.callback_query.edit_message_text.call_args)
@@ -381,7 +381,7 @@ class TestChoosePolicyCallback:
         update, context = make_callback(f"{session5.cid}_{policy}", president.uid)
         context.bot = bot
         bot.reset_mock()
-        await MainController.choose_policy(update, context)
+        await controller.choose_policy(update, context)
 
         # Should advance to chancellor enact
         action, ctx2 = session5.engine.pending_action()
@@ -400,7 +400,7 @@ class TestChoosePolicyCallback:
         update, context = make_callback(f"{session5.cid}_{policy}", chancellor.uid)
         context.bot = bot
         bot.reset_mock()
-        await MainController.choose_policy(update, context)
+        await controller.choose_policy(update, context)
 
         texts = sent_texts(context.bot)
         assert any("enacted" in t and policy in t for t in texts)
@@ -446,7 +446,7 @@ class TestChoosePolicyCallback:
         update, context = make_callback(f"{session5.cid}_veto", chancellor.uid)
         context.bot = bot
         bot.reset_mock()
-        await MainController.choose_policy(update, context)
+        await controller.choose_policy(update, context)
 
         # Should advance to VETO_CHOICE
         action, _ = session5.engine.pending_action()
@@ -471,7 +471,7 @@ class TestChoosePolicyCallback:
         update, context = make_callback(f"{session5.cid}_{fascist_policy}", chancellor.uid)
         context.bot = bot
         bot.reset_mock()
-        await MainController.choose_policy(update, context)
+        await controller.choose_policy(update, context)
 
         texts = sent_texts(bot)
         assert any("Policy Peek" in t for t in texts)
@@ -493,7 +493,7 @@ class TestChooseVetoCallback:
         update, context = make_callback(f"{session5.cid}_yesveto", president.uid)
         context.bot = bot
         bot.reset_mock()
-        await MainController.choose_veto(update, context)
+        await controller.choose_veto(update, context)
 
         texts = sent_texts(bot)
         assert any("accepted" in t.lower() for t in texts)
@@ -509,7 +509,7 @@ class TestChooseVetoCallback:
         update, context = make_callback(f"{session5.cid}_noveto", president.uid)
         context.bot = bot
         bot.reset_mock()
-        await MainController.choose_veto(update, context)
+        await controller.choose_veto(update, context)
 
         # Chancellor should be re-prompted without veto option
         action, ctx = session5.engine.pending_action()
@@ -529,7 +529,7 @@ class TestChooseVetoCallback:
         update, context = make_callback(f"{session5.cid}_yesveto", president.uid)
         context.bot = bot
         bot.reset_mock()
-        await MainController.choose_veto(update, context)
+        await controller.choose_veto(update, context)
 
         texts = sent_texts(bot)
         assert any("accepted" in t.lower() for t in texts)
@@ -564,7 +564,7 @@ class TestChooseKillCallback:
         update, context = make_callback(f"{session5.cid}_kill_{target.uid}", president.uid)
         context.bot = bot
         bot.reset_mock()
-        await MainController.choose_kill(update, context)
+        await controller.choose_kill(update, context)
 
         assert not session5.engine.game_over
         assert target.is_dead
@@ -582,7 +582,7 @@ class TestChooseKillCallback:
         update, context = make_callback(f"{session5.cid}_kill_{hitler.uid}", president.uid)
         context.bot = bot
         bot.reset_mock()
-        await MainController.choose_kill(update, context)
+        await controller.choose_kill(update, context)
 
         assert session5.engine.game_over
         assert session5.engine.end_code == EndCode.LIBERAL_KILLED_HITLER
@@ -596,7 +596,7 @@ class TestChooseKillCallback:
         update, context = make_callback(f"{session5.cid}_kill_{target.uid}", president.uid)
         context.bot = bot
         bot.reset_mock()
-        await MainController.choose_kill(update, context)
+        await controller.choose_kill(update, context)
 
         update.callback_query.edit_message_text.assert_called_once()
         edit_text = str(update.callback_query.edit_message_text.call_args)
@@ -621,7 +621,7 @@ class TestChooseInspectCallback:
         update, context = make_callback(f"{session5.cid}_insp_{target.uid}", president.uid)
         context.bot = bot
         bot.reset_mock()
-        await MainController.choose_inspect(update, context)
+        await controller.choose_inspect(update, context)
 
         # President should see target's party in the edit message
         edit_text = str(update.callback_query.edit_message_text.call_args)
@@ -653,7 +653,7 @@ class TestChooseChooseCallback:
         update, context = make_callback(f"{session5.cid}_choo_{target.uid}", president.uid)
         context.bot = bot
         bot.reset_mock()
-        await MainController.choose_choose(update, context)
+        await controller.choose_choose(update, context)
 
         # Group message about the special election
         texts = sent_texts(bot)
@@ -676,7 +676,7 @@ class TestChooseChooseCallback:
         update, context = make_callback(f"{session5.cid}_choo_{target.uid}", president.uid)
         context.bot = bot
         bot.reset_mock()
-        await MainController.choose_choose(update, context)
+        await controller.choose_choose(update, context)
 
         update.callback_query.edit_message_text.assert_called_once()
         edit_text = str(update.callback_query.edit_message_text.call_args)
