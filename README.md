@@ -4,11 +4,9 @@
 
 A Telegram bot for the political card game [Secret Hitler](http://secrethitler.com/).
 
-Forked from [julianschritt/SecretHitlerBot](https://github.com/julianschritt/SecretHitlerBot).
-
 ## Start a game
 
-Add the bot to a Telegram group (5-10 players needed).
+Run your own bot (see below) and add it to a Telegram group (5-10 players needed).
 
 ## Commands
 
@@ -23,6 +21,7 @@ Add the bot to a Telegram group (5-10 players needed).
 - `/board` - Print current board state
 - `/votes` - Show who voted
 - `/calltovote` - Remind players to vote
+- `/stats` - Game statistics
 
 ## Setup
 
