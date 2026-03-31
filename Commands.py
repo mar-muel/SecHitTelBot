@@ -3,7 +3,8 @@ import logging as log
 
 import datetime
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, constants
+from telegram.ext import ContextTypes
 
 import MainController
 import GamesController
@@ -44,52 +45,58 @@ symbols = [
 ]
 
 
-def command_symbols(bot, update):
+async def command_symbols(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    assert update.message is not None
     cid = update.message.chat_id
     symbol_text = "The following symbols can appear on the board: \n"
     for i in symbols:
         symbol_text += i + "\n"
-    bot.send_message(cid, symbol_text)
+    await context.bot.send_message(cid, symbol_text)
 
 
-def command_board(bot, update):
+async def command_board(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    assert update.message is not None
     cid = update.message.chat_id
     if cid in GamesController.games.keys():
         session = GamesController.games[cid]
         if session.board:
-            bot.send_message(cid, session.board.print_board())
+            await context.bot.send_message(cid, session.board.print_board())
         else:
-            bot.send_message(cid, "There is no running game in this chat. Please start the game with /startgame")
+            await context.bot.send_message(cid, "There is no running game in this chat. Please start the game with /startgame")
     else:
-        bot.send_message(cid, "There is no game in this chat. Create a new game with /newgame")
+        await context.bot.send_message(cid, "There is no game in this chat. Create a new game with /newgame")
 
 
-def command_start(bot, update):
+async def command_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    assert update.message is not None
     cid = update.message.chat_id
-    bot.send_message(cid,
+    await context.bot.send_message(cid,
                      "\"Secret Hitler is a social deduction game for 5-10 people about finding and stopping the Secret Hitler."
                      " The majority of players are liberals. If they can learn to trust each other, they have enough "
                      "votes to control the table and win the game. But some players are fascists. They will say whatever "
                      "it takes to get elected, enact their agenda, and blame others for the fallout. The liberals must "
                      "work together to discover the truth before the fascists install their cold-blooded leader and win "
                      "the game.\"\n- official description of Secret Hitler\n\nAdd me to a group and type /newgame to create a game!")
-    command_help(bot, update)
+    await command_help(update, context)
 
 
-def command_rules(bot, update):
+async def command_rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    assert update.message is not None
     cid = update.message.chat_id
     btn = [[InlineKeyboardButton("Rules", url="http://www.secrethitler.com/assets/Secret_Hitler_Rules.pdf")]]
     rulesMarkup = InlineKeyboardMarkup(btn)
-    bot.send_message(cid, "Read the official Secret Hitler rules:", reply_markup=rulesMarkup)
+    await context.bot.send_message(cid, "Read the official Secret Hitler rules:", reply_markup=rulesMarkup)
 
 
 # pings the bot
-def command_ping(bot, update):
+async def command_ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    assert update.message is not None
     cid = update.message.chat_id
-    bot.send_message(cid, 'pong - v0.4')
+    await context.bot.send_message(cid, 'pong - v0.4')
 
 
-def command_stats(bot, update):
+async def command_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    assert update.message is not None
     cid = update.message.chat_id
     with open(STATS, 'r') as f:
         stats = json.load(f)
@@ -101,26 +108,29 @@ def command_stats(bot, update):
                 f"Games cancelled: {stats.get('cancelled')}\n\n"
                 f"Total amount of groups: {len(stats.get('groups'))}\n"
                 f"Games running right now: {len(GamesController.games)}")
-    bot.send_message(cid, stattext)
+    await context.bot.send_message(cid, stattext)
 
 
 # help page
-def command_help(bot, update):
+async def command_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    assert update.message is not None
     cid = update.message.chat_id
     help_text = "The following commands are available:\n"
     for i in commands:
         help_text += i + "\n"
-    bot.send_message(cid, help_text)
+    await context.bot.send_message(cid, help_text)
 
 
-def command_newgame(bot, update):
+async def command_newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    assert update.message is not None
+    assert update.message.from_user is not None
     cid = update.message.chat_id
     session = GamesController.games.get(cid, None)
     groupType = update.message.chat.type
     if groupType not in ['group', 'supergroup']:
-        bot.send_message(cid, "You have to add me to a group first and type /newgame there!")
+        await context.bot.send_message(cid, "You have to add me to a group first and type /newgame there!")
     elif session:
-        bot.send_message(cid, "There is currently a game running. If you want to end it please type /cancelgame!")
+        await context.bot.send_message(cid, "There is currently a game running. If you want to end it please type /cancelgame!")
     else:
         GamesController.games[cid] = MainController.GameSession(cid, update.message.from_user.id)
         with open(STATS, 'r') as f:
@@ -129,12 +139,14 @@ def command_newgame(bot, update):
             stats.get("groups").append(cid)
             with open(STATS, 'w') as f:
                 json.dump(stats, f)
-        bot.send_message(cid, "New game created! Each player has to /join the game.\n"
+        await context.bot.send_message(cid, "New game created! Each player has to /join the game.\n"
                               "The initiator of this game (or the admin) can /join too and "
                               "type /startgame when everyone has joined the game!")
 
 
-def command_join(bot, update):
+async def command_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    assert update.message is not None
+    assert update.message.from_user is not None
     groupName = update.message.chat.title
     cid = update.message.chat_id
     groupType = update.message.chat.type
@@ -142,98 +154,105 @@ def command_join(bot, update):
     fname = update.message.from_user.first_name
 
     if groupType not in ['group', 'supergroup']:
-        bot.send_message(cid, "You have to add me to a group first and type /newgame there!")
+        await context.bot.send_message(cid, "You have to add me to a group first and type /newgame there!")
     elif not session:
-        bot.send_message(cid, "There is no game in this chat. Create a new game with /newgame")
+        await context.bot.send_message(cid, "There is no game in this chat. Create a new game with /newgame")
     elif session.started:
-        bot.send_message(cid, "The game has started. Please wait for the next game!")
+        await context.bot.send_message(cid, "The game has started. Please wait for the next game!")
     elif update.message.from_user.id in session.playerlist:
-        bot.send_message(session.cid, f"You already joined the game, {fname}!")
+        await context.bot.send_message(session.cid, f"You already joined the game, {fname}!")
     elif len(session.playerlist) >= 10:
-        bot.send_message(session.cid, "You have reached the maximum amount of players. "
+        await context.bot.send_message(session.cid, "You have reached the maximum amount of players. "
                                       "Please start the game with /startgame!")
     else:
         uid = update.message.from_user.id
         player = Player(fname, uid)
         try:
-            bot.send_message(uid, f"You joined a game in {groupName}. "
+            await context.bot.send_message(uid, f"You joined a game in {groupName}. "
                                   f"I will soon tell you your secret role.")
             session.add_player(uid, player)
         except Exception:
-            bot.send_message(session.cid,
+            await context.bot.send_message(session.cid,
                              f"{fname}, I can't send you a private message. "
                              f"Please go to @thesecrethitlerbot and click \"Start\".\n"
                              f"You then need to send /join again.")
         else:
             log.info(f"{fname} ({uid}) joined a game in {session.cid}")
             if len(session.playerlist) > 4:
-                bot.send_message(session.cid,
+                await context.bot.send_message(session.cid,
                     f"{fname} has joined the game. Type /startgame if this was the last "
                     f"player and you want to start with {len(session.playerlist)} players!")
             elif len(session.playerlist) == 1:
-                bot.send_message(session.cid,
+                await context.bot.send_message(session.cid,
                     f"{fname} has joined the game. There is currently "
                     f"{len(session.playerlist)} player in the game and you need 5-10 players.")
             else:
-                bot.send_message(session.cid,
+                await context.bot.send_message(session.cid,
                     f"{fname} has joined the game. There are currently "
                     f"{len(session.playerlist)} players in the game and you need 5-10 players.")
 
 
-def command_startgame(bot, update):
+async def command_startgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
     log.info('command_startgame called')
+    assert update.message is not None
+    assert update.message.from_user is not None
     cid = update.message.chat_id
     session = GamesController.games.get(cid, None)
     if not session:
-        bot.send_message(cid, "There is no game in this chat. Create a new game with /newgame")
+        await context.bot.send_message(cid, "There is no game in this chat. Create a new game with /newgame")
     elif session.started:
-        bot.send_message(cid, "The game is already running!")
+        await context.bot.send_message(cid, "The game is already running!")
     elif update.message.from_user.id != session.initiator and \
-            bot.getChatMember(cid, update.message.from_user.id).status not in ("administrator", "creator"):
-        bot.send_message(session.cid, "Only the initiator of the game or a group admin "
+            (await context.bot.get_chat_member(cid, update.message.from_user.id)).status not in ("administrator", "creator"):
+        await context.bot.send_message(session.cid, "Only the initiator of the game or a group admin "
                                       "can start the game with /startgame")
     elif len(session.playerlist) < 5:
-        bot.send_message(session.cid, "There are not enough players (min. 5, max. 10). "
+        await context.bot.send_message(session.cid, "There are not enough players (min. 5, max. 10). "
                                       "Join the game with /join")
     else:
         # Create engine from lobby players, assign roles, set up board
         session.start()
-        MainController.inform_players(bot, session)
-        MainController.inform_fascists(bot, session)
-        bot.send_message(session.cid, session.engine.board.print_board())
-        MainController.present_action(bot, session)
+        assert session.engine is not None
+        await MainController.inform_players(context.bot, session)
+        await MainController.inform_fascists(context.bot, session)
+        await context.bot.send_message(session.cid, session.engine.board.print_board())
+        await MainController.present_action(context.bot, session)
 
 
-def command_cancelgame(bot, update):
+async def command_cancelgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
     log.info('command_cancelgame called')
+    assert update.message is not None
+    assert update.message.from_user is not None
     cid = update.message.chat_id
     if cid in GamesController.games.keys():
         session = GamesController.games[cid]
-        status = bot.getChatMember(cid, update.message.from_user.id).status
+        status = (await context.bot.get_chat_member(cid, update.message.from_user.id)).status
         if update.message.from_user.id == session.initiator or \
                 status in ("administrator", "creator"):
-            MainController.end_game(bot, session, cancelled=True)
+            await MainController.end_game(context.bot, session, cancelled=True)
         else:
-            bot.send_message(cid, "Only the initiator of the game or a group admin "
+            await context.bot.send_message(cid, "Only the initiator of the game or a group admin "
                                   "can cancel the game with /cancelgame")
     else:
-        bot.send_message(cid, "There is no game in this chat. Create a new game with /newgame")
+        await context.bot.send_message(cid, "There is no game in this chat. Create a new game with /newgame")
 
 
-def command_votes(bot, update):
+async def command_votes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    assert update.message is not None
+    cid = update.message.chat_id
     try:
-        cid = update.message.chat_id
         if cid in GamesController.games.keys():
             session = GamesController.games[cid]
             if not session.dateinitvote:
                 # If dateinitvote is null, then the voting didn't start
-                bot.send_message(cid, "The voting didn't start yet.")
+                await context.bot.send_message(cid, "The voting didn't start yet.")
             else:
                 start = session.dateinitvote
                 stop = datetime.datetime.now()
                 elapsed = stop - start
                 if elapsed > datetime.timedelta(minutes=1):
-                    _, ctx = session.engine.pending_action()
+                    assert session.engine is not None
+                    _, ctx = session.engine.pending_action()  # type: ignore[misc]
                     history_text = (f"Vote history for President {ctx['president'].name} "
                                     f"and Chancellor {ctx['chancellor'].name}:\n\n")
                     for player in session.player_sequence:
@@ -241,22 +260,23 @@ def command_votes(bot, update):
                             history_text += f"{session.playerlist[player.uid].name} registered a vote.\n"
                         else:
                             history_text += f"{session.playerlist[player.uid].name} didn't register a vote.\n"
-                    bot.send_message(cid, history_text)
+                    await context.bot.send_message(cid, history_text)
                 else:
-                    bot.send_message(cid, "Five minutes must pass to see the votes")
+                    await context.bot.send_message(cid, "Five minutes must pass to see the votes")
         else:
-            bot.send_message(cid, "There is no game in this chat. Create a new game with /newgame")
+            await context.bot.send_message(cid, "There is no game in this chat. Create a new game with /newgame")
     except Exception as e:
-        bot.send_message(cid, str(e))
+        await context.bot.send_message(cid, str(e))
 
 
-def command_calltovote(bot, update):
+async def command_calltovote(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    assert update.message is not None
+    cid = update.message.chat_id
     try:
-        cid = update.message.chat_id
         if cid in GamesController.games.keys():
             session = GamesController.games[cid]
             if not session.dateinitvote:
-                bot.send_message(cid, "The voting didn't start yet.")
+                await context.bot.send_message(cid, "The voting didn't start yet.")
             else:
                 start = session.dateinitvote
                 stop = datetime.datetime.now()
@@ -269,10 +289,10 @@ def command_calltovote(bot, update):
                             history_text += (f"It's time to vote "
                                              f"[{session.playerlist[player.uid].name}]"
                                              f"(tg://user?id={player.uid}).\n")
-                    bot.send_message(cid, text=history_text, parse_mode=ParseMode.MARKDOWN)
+                    await context.bot.send_message(cid, text=history_text, parse_mode=constants.ParseMode.MARKDOWN)
                 else:
-                    bot.send_message(cid, "Five minutes must pass to see call to vote")
+                    await context.bot.send_message(cid, "Five minutes must pass to see call to vote")
         else:
-            bot.send_message(cid, "There is no game in this chat. Create a new game with /newgame")
+            await context.bot.send_message(cid, "There is no game in this chat. Create a new game with /newgame")
     except Exception as e:
-        bot.send_message(cid, str(e))
+        await context.bot.send_message(cid, str(e))

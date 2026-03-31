@@ -1,7 +1,7 @@
-class Player(object):
-    def __init__(self, name, uid):
+class Player:
+    def __init__(self, name: str, uid: int):
         self.name = name
         self.uid = uid
-        self.role = None
-        self.party = None
+        self.role: str | None = None
+        self.party: str | None = None
         self.is_dead = False

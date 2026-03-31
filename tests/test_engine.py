@@ -5,7 +5,9 @@ import pytest
 
 def random_step(engine: GameEngine) -> None:
     """Make a random valid choice for the current pending action."""
-    action, ctx = engine.pending_action()
+    pending = engine.pending_action()
+    assert pending is not None
+    action, ctx = pending
 
     if action == Action.NOMINATE_CHANCELLOR:
         engine.step(random.choice(ctx["eligible"]))
@@ -56,7 +58,7 @@ class TestEngineBasics:
 
     def test_first_pending_is_nomination(self):
         e = GameEngine(5, seed=42)
-        action, ctx = e.pending_action()
+        action, ctx = e.pending_action()  # type: ignore[misc]
         assert action == Action.NOMINATE_CHANCELLOR
         assert "eligible" in ctx
         assert "president" in ctx
@@ -74,7 +76,7 @@ class TestEngineBasics:
         assert roles.count("Fascist") == 1
         assert roles.count("Hitler") == 1
         # Game should be playable
-        action, _ = e.pending_action()
+        action, _ = e.pending_action()  # type: ignore[misc]
         assert action == Action.NOMINATE_CHANCELLOR
 
     def test_players_dict_game_completes(self):

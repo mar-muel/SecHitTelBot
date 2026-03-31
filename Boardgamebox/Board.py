@@ -3,7 +3,7 @@ from Constants.Cards import policies
 import random
 from Boardgamebox.State import State
 
-class Board(object):
+class Board:
     def __init__(self, playercount, game):
         self.state = State()
         self.num_players = playercount

@@ -1,5 +1,6 @@
 """Integration tests for the Telegram layer (MainController + GameSession) on top of the engine."""
 
+import pytest
 from Constants.Cards import playerSets
 from engine import Action, EndCode
 import MainController
@@ -39,9 +40,10 @@ class TestRoleAssignment:
 
 
 class TestFascistInformation:
-    def test_5p_hitler_knows_fascist(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_5p_hitler_knows_fascist(self, bot, session5):
         bot.reset_mock()
-        MainController.inform_fascists(bot, session5)
+        await MainController.inform_fascists(bot, session5)
         hitler = session5.engine.game.get_hitler()
         fascists = session5.engine.game.get_fascists()
         msgs = [c for c in bot.send_message.call_args_list if c[0][0] == hitler.uid]
@@ -49,16 +51,18 @@ class TestFascistInformation:
         assert len(fellow_msgs) == 1
         assert fascists[0].name in str(fellow_msgs[0])
 
-    def test_7p_hitler_does_not_know_fascists(self, bot, session7):
+    @pytest.mark.asyncio
+    async def test_7p_hitler_does_not_know_fascists(self, bot, session7):
         bot.reset_mock()
-        MainController.inform_fascists(bot, session7)
+        await MainController.inform_fascists(bot, session7)
         hitler = session7.engine.game.get_hitler()
         msgs = [c for c in bot.send_message.call_args_list if c[0][0] == hitler.uid]
         assert not any("fellow fascist" in str(c) for c in msgs)
 
-    def test_7p_fascists_know_hitler(self, bot, session7):
+    @pytest.mark.asyncio
+    async def test_7p_fascists_know_hitler(self, bot, session7):
         bot.reset_mock()
-        MainController.inform_fascists(bot, session7)
+        await MainController.inform_fascists(bot, session7)
         hitler = session7.engine.game.get_hitler()
         for f in session7.engine.game.get_fascists():
             msgs = [c for c in bot.send_message.call_args_list if c[0][0] == f.uid]
@@ -95,9 +99,10 @@ class TestPresentAction:
         assert "eligible" in ctx
         assert "president" in ctx
 
-    def test_present_nomination_sends_keyboard(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_present_nomination_sends_keyboard(self, bot, session5):
         bot.reset_mock()
-        MainController.present_action(bot, session5)
+        await MainController.present_action(bot, session5)
         # Should send messages: one to group (announcement) + two to president (board + keyboard)
         texts = sent_texts(bot)
         assert any("presidential candidate" in t for t in texts)
@@ -204,7 +209,8 @@ class TestEndGame:
             assert session5.engine.game_over
             assert session5.engine.end_code == EndCode.LIBERAL_POLICIES
 
-    def test_end_game_sends_message(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_end_game_sends_message(self, bot, session5):
         # Force a game-over state
         session5.engine.state.liberal_track = 4
         _, ctx = session5.engine.pending_action()
@@ -214,12 +220,13 @@ class TestEndGame:
         if session5.engine.game_over:
             # Hitler was elected
             bot.reset_mock()
-            MainController.end_game(bot, session5)
+            await MainController.end_game(bot, session5)
             texts = sent_texts(bot)
             assert any("Game over" in t for t in texts)
 
-    def test_cancel_game(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_cancel_game(self, bot, session5):
         bot.reset_mock()
-        MainController.end_game(bot, session5, cancelled=True)
+        await MainController.end_game(bot, session5, cancelled=True)
         texts = sent_texts(bot)
         assert any("Game cancelled" in t for t in texts)

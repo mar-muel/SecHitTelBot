@@ -1,15 +1,17 @@
-class State(object):
-    """Storage object for game state"""
+from Boardgamebox.Player import Player
+
+
+class State:
     def __init__(self):
         self.liberal_track = 0
         self.fascist_track = 0
         self.failed_votes = 0
-        self.president = None
-        self.nominated_president = None
-        self.nominated_chancellor = None
-        self.chosen_president = None
-        self.chancellor = None
-        self.drawn_policies = []
+        self.president: Player | None = None
+        self.nominated_president: Player | None = None
+        self.nominated_chancellor: Player | None = None
+        self.chosen_president: Player | None = None
+        self.chancellor: Player | None = None
+        self.drawn_policies: list[str] = []
         self.player_counter = 0
         self.veto_refused = False
-        self.not_hitlers = []
+        self.not_hitlers: list[Player] = []

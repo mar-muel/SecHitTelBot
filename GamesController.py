@@ -1,3 +1,3 @@
-def init():
-    global games
-    games = {}
+from MainController import GameSession
+
+games: dict[int, GameSession] = {}

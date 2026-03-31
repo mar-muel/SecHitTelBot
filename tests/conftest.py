@@ -1,18 +1,15 @@
 import sys
 import os
 import json
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import AsyncMock, mock_open, patch
 
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import GamesController
-import MainController
 from MainController import GameSession
 from Boardgamebox.Player import Player
-
-MainController.sleep = lambda x: None
 
 FAKE_STATS = json.dumps({
     "libwin_policies": 0, "libwin_kill": 0,
@@ -29,14 +26,20 @@ def mock_stats():
         yield
 
 
+@pytest.fixture(autouse=True)
+def mock_sleep():
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        yield
+
+
 @pytest.fixture
 def bot():
-    return MagicMock()
+    return AsyncMock()
 
 
 def _make_session(num_players, seed=None):
     """Create a GameSession in lobby phase with players added."""
-    GamesController.init()
+    GamesController.games.clear()
     cid = -999
     session = GameSession(cid, 100)
     for i in range(num_players):

@@ -1,6 +1,7 @@
 """Tests for Telegram callback handlers and all present_action branches."""
 
-from unittest.mock import MagicMock
+import pytest
+from unittest.mock import AsyncMock, MagicMock
 
 from engine import Action, EndCode
 import MainController
@@ -9,13 +10,16 @@ from conftest import sent_texts
 
 
 def make_callback(data, from_user_id, message_id=1):
-    """Create a mock Telegram callback query update."""
+    """Create a mock Telegram callback query update + context."""
     update = MagicMock()
+    update.callback_query = AsyncMock()
     update.callback_query.data = data
     update.callback_query.from_user.id = from_user_id
     update.callback_query.from_user.first_name = f"User{from_user_id}"
     update.callback_query.message.message_id = message_id
-    return update
+    context = MagicMock()
+    context.bot = AsyncMock()
+    return update, context
 
 
 # -- Helpers to drive the engine to specific states --
@@ -83,26 +87,29 @@ def step_to_veto_choice(session):
 # =============================================================================
 
 class TestPresentActionAllBranches:
-    def test_present_nomination(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_present_nomination(self, bot, session5):
         bot.reset_mock()
-        MainController.present_action(bot, session5)
+        await MainController.present_action(bot, session5)
         texts = sent_texts(bot)
         assert any("presidential candidate" in t for t in texts)
         assert any("nominate your chancellor" in t.lower() for t in texts)
 
-    def test_present_vote(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_present_vote(self, bot, session5):
         step_to_vote(session5)
         bot.reset_mock()
-        MainController.present_action(bot, session5)
+        await MainController.present_action(bot, session5)
         texts = sent_texts(bot)
         assert any("Do you want to elect" in t for t in texts)
         assert session5.dateinitvote is not None
         assert session5.pending_votes == {}
 
-    def test_vote_sends_buttons_to_all_alive(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_vote_sends_buttons_to_all_alive(self, bot, session5):
         step_to_vote(session5)
         bot.reset_mock()
-        MainController.present_action(bot, session5)
+        await MainController.present_action(bot, session5)
         # Every alive player should get a vote prompt
         alive_uids = {p.uid for p in session5.engine.alive_players}
         messaged_uids = {c[0][0] for c in bot.send_message.call_args_list}
@@ -110,25 +117,28 @@ class TestPresentActionAllBranches:
         player_msgs = messaged_uids - {session5.cid}
         assert player_msgs == alive_uids
 
-    def test_present_president_discard(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_present_president_discard(self, bot, session5):
         step_to_president_discard(session5)
         if session5.engine.game_over:
             return
         bot.reset_mock()
-        MainController.present_action(bot, session5)
+        await MainController.present_action(bot, session5)
         texts = sent_texts(bot)
         assert any("Which one do you want to discard" in t for t in texts)
 
-    def test_present_chancellor_enact(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_present_chancellor_enact(self, bot, session5):
         step_to_chancellor_enact(session5)
         if session5.engine.game_over:
             return
         bot.reset_mock()
-        MainController.present_action(bot, session5)
+        await MainController.present_action(bot, session5)
         texts = sent_texts(bot)
         assert any("Which one do you want to enact" in t for t in texts)
 
-    def test_present_chancellor_enact_with_veto_power(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_present_chancellor_enact_with_veto_power(self, bot, session5):
         """When fascist_track==5, chancellor should see a Veto button."""
         if not step_to_veto_choice(session5):
             return
@@ -139,19 +149,21 @@ class TestPresentActionAllBranches:
         assert action == Action.CHANCELLOR_ENACT
         assert ctx["can_veto"] is False
         bot.reset_mock()
-        MainController.present_action(bot, session5)
+        await MainController.present_action(bot, session5)
         texts = sent_texts(bot)
         assert any("refused your Veto" in t for t in texts)
 
-    def test_present_veto_choice(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_present_veto_choice(self, bot, session5):
         if not step_to_veto_choice(session5):
             return
         bot.reset_mock()
-        MainController.present_action(bot, session5)
+        await MainController.present_action(bot, session5)
         texts = sent_texts(bot)
         assert any("suggested a Veto" in t for t in texts)
 
-    def test_present_executive_kill(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_present_executive_kill(self, bot, session5):
         # Inject engine directly into EXECUTIVE_KILL state
         president = session5.engine.alive_players[0]
         others = [p for p in session5.engine.alive_players if p.uid != president.uid]
@@ -161,12 +173,13 @@ class TestPresentActionAllBranches:
             "choices": others,
         })
         bot.reset_mock()
-        MainController.present_action(bot, session5)
+        await MainController.present_action(bot, session5)
         texts = sent_texts(bot)
         assert any("Execution" in t for t in texts)
         assert any("kill one person" in t.lower() for t in texts)
 
-    def test_present_executive_inspect(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_present_executive_inspect(self, bot, session5):
         president = session5.engine.alive_players[0]
         others = [p for p in session5.engine.alive_players if p.uid != president.uid]
         session5.engine.state.president = president
@@ -175,12 +188,13 @@ class TestPresentActionAllBranches:
             "choices": others,
         })
         bot.reset_mock()
-        MainController.present_action(bot, session5)
+        await MainController.present_action(bot, session5)
         texts = sent_texts(bot)
         assert any("Investigate Loyalty" in t for t in texts)
         assert any("party membership" in t for t in texts)
 
-    def test_present_executive_special_election(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_present_executive_special_election(self, bot, session5):
         president = session5.engine.alive_players[0]
         others = [p for p in session5.engine.alive_players if p.uid != president.uid]
         session5.engine.state.president = president
@@ -189,17 +203,18 @@ class TestPresentActionAllBranches:
             "choices": others,
         })
         bot.reset_mock()
-        MainController.present_action(bot, session5)
+        await MainController.present_action(bot, session5)
         texts = sent_texts(bot)
         assert any("Special Election" in t for t in texts)
         assert any("next presidential candidate" in t for t in texts)
 
-    def test_present_action_calls_end_game_when_over(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_present_action_calls_end_game_when_over(self, bot, session5):
         """If engine is game_over, present_action should call end_game."""
         # Force game over
         session5.engine.end_code = EndCode.LIBERAL_POLICIES
         bot.reset_mock()
-        MainController.present_action(bot, session5)
+        await MainController.present_action(bot, session5)
         texts = sent_texts(bot)
         assert any("Game over" in t for t in texts)
         # Session should be removed from GamesController
@@ -211,31 +226,34 @@ class TestPresentActionAllBranches:
 # =============================================================================
 
 class TestNominateCallback:
-    def test_nominate_steps_engine_to_vote(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_nominate_steps_engine_to_vote(self, bot, session5):
         _, ctx = session5.engine.pending_action()
         president = ctx["president"]
         chosen = ctx["eligible"][0]
 
-        update = make_callback(f"{session5.cid}_chan_{chosen.uid}", president.uid)
-        bot.reset_mock()
-        MainController.nominate_chosen_chancellor(bot, update)
+        update, context = make_callback(f"{session5.cid}_chan_{chosen.uid}", president.uid)
+        context.bot = bot
+        await MainController.nominate_chosen_chancellor(update, context)
 
         # Engine should have advanced to VOTE
         action, _ = session5.engine.pending_action()
         assert action == Action.VOTE
 
-    def test_nominate_sends_messages(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_nominate_sends_messages(self, bot, session5):
         _, ctx = session5.engine.pending_action()
         president = ctx["president"]
         chosen = ctx["eligible"][0]
 
-        update = make_callback(f"{session5.cid}_chan_{chosen.uid}", president.uid)
+        update, context = make_callback(f"{session5.cid}_chan_{chosen.uid}", president.uid)
+        context.bot = bot
         bot.reset_mock()
-        MainController.nominate_chosen_chancellor(bot, update)
+        await MainController.nominate_chosen_chancellor(update, context)
 
         # Confirmation edit to president
-        bot.edit_message_text.assert_called_once()
-        edit_text = str(bot.edit_message_text.call_args)
+        update.callback_query.edit_message_text.assert_called_once()
+        edit_text = str(update.callback_query.edit_message_text.call_args)
         assert "nominated" in edit_text and chosen.name in edit_text
         # Group announcement
         texts = sent_texts(bot)
@@ -247,13 +265,15 @@ class TestNominateCallback:
 # =============================================================================
 
 class TestVotingCallbacks:
-    def test_single_vote_does_not_finish(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_single_vote_does_not_finish(self, bot, session5):
         step_to_vote(session5)
         _, ctx = session5.engine.pending_action()
         voter = ctx["voters"][0]
 
-        update = make_callback(f"{session5.cid}_Ja", voter.uid)
-        MainController.handle_voting(bot, update)
+        update, context = make_callback(f"{session5.cid}_Ja", voter.uid)
+        context.bot = bot
+        await MainController.handle_voting(update, context)
 
         assert voter.uid in session5.pending_votes
         assert session5.pending_votes[voter.uid] is True
@@ -261,27 +281,32 @@ class TestVotingCallbacks:
         action, _ = session5.engine.pending_action()
         assert action == Action.VOTE
 
-    def test_duplicate_vote_ignored(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_duplicate_vote_ignored(self, bot, session5):
         step_to_vote(session5)
         _, ctx = session5.engine.pending_action()
         voter = ctx["voters"][0]
 
-        update_ja = make_callback(f"{session5.cid}_Ja", voter.uid)
-        MainController.handle_voting(bot, update_ja)
+        update_ja, ctx_ja = make_callback(f"{session5.cid}_Ja", voter.uid)
+        ctx_ja.bot = bot
+        await MainController.handle_voting(update_ja, ctx_ja)
         assert session5.pending_votes[voter.uid] is True
 
         # Second vote with Nein — should be ignored
-        update_nein = make_callback(f"{session5.cid}_Nein", voter.uid)
-        MainController.handle_voting(bot, update_nein)
+        update_nein, ctx_nein = make_callback(f"{session5.cid}_Nein", voter.uid)
+        ctx_nein.bot = bot
+        await MainController.handle_voting(update_nein, ctx_nein)
         assert session5.pending_votes[voter.uid] is True  # still Ja
 
-    def test_all_ja_passes(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_all_ja_passes(self, bot, session5):
         step_to_vote(session5)
         _, ctx = session5.engine.pending_action()
 
         for voter in ctx["voters"]:
-            update = make_callback(f"{session5.cid}_Ja", voter.uid)
-            MainController.handle_voting(bot, update)
+            update, context = make_callback(f"{session5.cid}_Ja", voter.uid)
+            context.bot = bot
+            await MainController.handle_voting(update, context)
 
         # Vote passed — engine should advance past VOTE
         if not session5.engine.game_over:
@@ -290,13 +315,15 @@ class TestVotingCallbacks:
         texts = sent_texts(bot)
         assert any("Hail President" in t for t in texts)
 
-    def test_all_nein_fails(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_all_nein_fails(self, bot, session5):
         step_to_vote(session5)
         _, ctx = session5.engine.pending_action()
 
         for voter in ctx["voters"]:
-            update = make_callback(f"{session5.cid}_Nein", voter.uid)
-            MainController.handle_voting(bot, update)
+            update, context = make_callback(f"{session5.cid}_Nein", voter.uid)
+            context.bot = bot
+            await MainController.handle_voting(update, context)
 
         # Vote failed — engine should be back at nomination
         action, _ = session5.engine.pending_action()
@@ -304,31 +331,35 @@ class TestVotingCallbacks:
         texts = sent_texts(bot)
         assert any("didn't like" in t for t in texts)
 
-    def test_anarchy_after_third_failure(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_anarchy_after_third_failure(self, bot, session5):
         session5.engine.state.failed_votes = 2
         step_to_vote(session5)
         _, ctx = session5.engine.pending_action()
 
         for voter in ctx["voters"]:
-            update = make_callback(f"{session5.cid}_Nein", voter.uid)
-            MainController.handle_voting(bot, update)
+            update, context = make_callback(f"{session5.cid}_Nein", voter.uid)
+            context.bot = bot
+            await MainController.handle_voting(update, context)
 
         texts = sent_texts(bot)
         assert any("ANARCHY" in t for t in texts)
         # A policy should have been enacted (track changed or game over)
         assert session5.engine.game_over or session5.engine.pending_action() is not None
 
-    def test_edit_message_sent_to_voter(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_edit_message_sent_to_voter(self, bot, session5):
         step_to_vote(session5)
         _, ctx = session5.engine.pending_action()
         voter = ctx["voters"][0]
 
-        update = make_callback(f"{session5.cid}_Ja", voter.uid)
+        update, context = make_callback(f"{session5.cid}_Ja", voter.uid)
+        context.bot = bot
         bot.reset_mock()
-        MainController.handle_voting(bot, update)
+        await MainController.handle_voting(update, context)
 
-        bot.edit_message_text.assert_called_once()
-        edit_text = str(bot.edit_message_text.call_args)
+        update.callback_query.edit_message_text.assert_called_once()
+        edit_text = str(update.callback_query.edit_message_text.call_args)
         assert "Thank you for your vote" in edit_text
         assert "Ja" in edit_text
 
@@ -338,7 +369,8 @@ class TestVotingCallbacks:
 # =============================================================================
 
 class TestChoosePolicyCallback:
-    def test_president_discard(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_president_discard(self, bot, session5):
         step_to_president_discard(session5)
         if session5.engine.game_over:
             return
@@ -346,16 +378,18 @@ class TestChoosePolicyCallback:
         president = ctx["president"]
         policy = ctx["policies"][0]
 
-        update = make_callback(f"{session5.cid}_{policy}", president.uid)
+        update, context = make_callback(f"{session5.cid}_{policy}", president.uid)
+        context.bot = bot
         bot.reset_mock()
-        MainController.choose_policy(bot, update)
+        await MainController.choose_policy(update, context)
 
         # Should advance to chancellor enact
         action, ctx2 = session5.engine.pending_action()
         assert action == Action.CHANCELLOR_ENACT
         assert len(ctx2["policies"]) == 2
 
-    def test_chancellor_enact(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_chancellor_enact(self, bot, session5):
         step_to_chancellor_enact(session5)
         if session5.engine.game_over:
             return
@@ -363,16 +397,18 @@ class TestChoosePolicyCallback:
         chancellor = ctx["chancellor"]
         policy = ctx["policies"][0]
 
-        update = make_callback(f"{session5.cid}_{policy}", chancellor.uid)
+        update, context = make_callback(f"{session5.cid}_{policy}", chancellor.uid)
+        context.bot = bot
         bot.reset_mock()
-        MainController.choose_policy(bot, update)
+        await MainController.choose_policy(update, context)
 
-        texts = sent_texts(bot)
+        texts = sent_texts(context.bot)
         assert any("enacted" in t and policy in t for t in texts)
         # Engine should have advanced (next round, executive action, or game over)
         assert session5.engine.game_over or session5.engine.pending_action() is not None
 
-    def test_chancellor_veto_proposal(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_chancellor_veto_proposal(self, bot, session5):
         if not step_to_veto_choice(session5):
             return
         # We're at VETO_CHOICE already via the helper.
@@ -385,7 +421,8 @@ class TestChoosePolicyCallback:
         # Instead, test that the callback handler correctly processes a veto.
         pass
 
-    def test_chancellor_veto_via_callback(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_chancellor_veto_via_callback(self, bot, session5):
         """Test the full callback path for a veto proposal."""
         # Get to CHANCELLOR_ENACT with veto available
         _, ctx = session5.engine.pending_action()
@@ -406,9 +443,10 @@ class TestChoosePolicyCallback:
             return
 
         chancellor = ctx["chancellor"]
-        update = make_callback(f"{session5.cid}_veto", chancellor.uid)
+        update, context = make_callback(f"{session5.cid}_veto", chancellor.uid)
+        context.bot = bot
         bot.reset_mock()
-        MainController.choose_policy(bot, update)
+        await MainController.choose_policy(update, context)
 
         # Should advance to VETO_CHOICE
         action, _ = session5.engine.pending_action()
@@ -416,7 +454,8 @@ class TestChoosePolicyCallback:
         texts = sent_texts(bot)
         assert any("Veto" in t for t in texts)
 
-    def test_policy_peek_after_fascist_enact(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_policy_peek_after_fascist_enact(self, bot, session5):
         """On a 5-player board, the 3rd fascist policy triggers a policy peek."""
         session5.engine.state.fascist_track = 2  # next fascist will be slot 3 → "policy" peek
         step_to_chancellor_enact(session5)
@@ -429,9 +468,10 @@ class TestChoosePolicyCallback:
         if not fascist_policy:
             return
 
-        update = make_callback(f"{session5.cid}_{fascist_policy}", chancellor.uid)
+        update, context = make_callback(f"{session5.cid}_{fascist_policy}", chancellor.uid)
+        context.bot = bot
         bot.reset_mock()
-        MainController.choose_policy(bot, update)
+        await MainController.choose_policy(update, context)
 
         texts = sent_texts(bot)
         assert any("Policy Peek" in t for t in texts)
@@ -443,29 +483,33 @@ class TestChoosePolicyCallback:
 # =============================================================================
 
 class TestChooseVetoCallback:
-    def test_accept_veto(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_accept_veto(self, bot, session5):
         if not step_to_veto_choice(session5):
             return
         _, ctx = session5.engine.pending_action()
         president = ctx["president"]
 
-        update = make_callback(f"{session5.cid}_yesveto", president.uid)
+        update, context = make_callback(f"{session5.cid}_yesveto", president.uid)
+        context.bot = bot
         bot.reset_mock()
-        MainController.choose_veto(bot, update)
+        await MainController.choose_veto(update, context)
 
         texts = sent_texts(bot)
         assert any("accepted" in t.lower() for t in texts)
         assert session5.engine.game_over or session5.engine.pending_action() is not None
 
-    def test_refuse_veto(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_refuse_veto(self, bot, session5):
         if not step_to_veto_choice(session5):
             return
         _, ctx = session5.engine.pending_action()
         president = ctx["president"]
 
-        update = make_callback(f"{session5.cid}_noveto", president.uid)
+        update, context = make_callback(f"{session5.cid}_noveto", president.uid)
+        context.bot = bot
         bot.reset_mock()
-        MainController.choose_veto(bot, update)
+        await MainController.choose_veto(update, context)
 
         # Chancellor should be re-prompted without veto option
         action, ctx = session5.engine.pending_action()
@@ -474,16 +518,18 @@ class TestChooseVetoCallback:
         texts = sent_texts(bot)
         assert any("refused" in t.lower() for t in texts)
 
-    def test_veto_accept_triggers_anarchy_on_third_failure(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_veto_accept_triggers_anarchy_on_third_failure(self, bot, session5):
         session5.engine.state.failed_votes = 2
         if not step_to_veto_choice(session5):
             return
         _, ctx = session5.engine.pending_action()
         president = ctx["president"]
 
-        update = make_callback(f"{session5.cid}_yesveto", president.uid)
+        update, context = make_callback(f"{session5.cid}_yesveto", president.uid)
+        context.bot = bot
         bot.reset_mock()
-        MainController.choose_veto(bot, update)
+        await MainController.choose_veto(update, context)
 
         texts = sent_texts(bot)
         assert any("accepted" in t.lower() for t in texts)
@@ -511,12 +557,14 @@ class TestChooseKillCallback:
         })
         return president, target
 
-    def test_kill_non_hitler(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_kill_non_hitler(self, bot, session5):
         president, target = self._setup_kill(session5, "Liberal")
 
-        update = make_callback(f"{session5.cid}_kill_{target.uid}", president.uid)
+        update, context = make_callback(f"{session5.cid}_kill_{target.uid}", president.uid)
+        context.bot = bot
         bot.reset_mock()
-        MainController.choose_kill(bot, update)
+        await MainController.choose_kill(update, context)
 
         assert not session5.engine.game_over
         assert target.is_dead
@@ -527,27 +575,31 @@ class TestChooseKillCallback:
         action, _ = session5.engine.pending_action()
         assert action == Action.NOMINATE_CHANCELLOR
 
-    def test_kill_hitler_ends_game(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_kill_hitler_ends_game(self, bot, session5):
         president, hitler = self._setup_kill(session5, "Hitler")
 
-        update = make_callback(f"{session5.cid}_kill_{hitler.uid}", president.uid)
+        update, context = make_callback(f"{session5.cid}_kill_{hitler.uid}", president.uid)
+        context.bot = bot
         bot.reset_mock()
-        MainController.choose_kill(bot, update)
+        await MainController.choose_kill(update, context)
 
         assert session5.engine.game_over
         assert session5.engine.end_code == EndCode.LIBERAL_KILLED_HITLER
         texts = sent_texts(bot)
         assert any("killed" in t and hitler.name in t for t in texts)
 
-    def test_kill_edits_president_message(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_kill_edits_president_message(self, bot, session5):
         president, target = self._setup_kill(session5, "Liberal")
 
-        update = make_callback(f"{session5.cid}_kill_{target.uid}", president.uid)
+        update, context = make_callback(f"{session5.cid}_kill_{target.uid}", president.uid)
+        context.bot = bot
         bot.reset_mock()
-        MainController.choose_kill(bot, update)
+        await MainController.choose_kill(update, context)
 
-        bot.edit_message_text.assert_called_once()
-        edit_text = str(bot.edit_message_text.call_args)
+        update.callback_query.edit_message_text.assert_called_once()
+        edit_text = str(update.callback_query.edit_message_text.call_args)
         assert "killed" in edit_text.lower() and target.name in edit_text
 
 
@@ -556,7 +608,8 @@ class TestChooseKillCallback:
 # =============================================================================
 
 class TestChooseInspectCallback:
-    def test_inspect_reveals_party(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_inspect_reveals_party(self, bot, session5):
         president = session5.engine.alive_players[0]
         target = session5.engine.alive_players[1]
         session5.engine.state.president = president
@@ -565,12 +618,13 @@ class TestChooseInspectCallback:
             "choices": [p for p in session5.engine.alive_players if p.uid != president.uid],
         })
 
-        update = make_callback(f"{session5.cid}_insp_{target.uid}", president.uid)
+        update, context = make_callback(f"{session5.cid}_insp_{target.uid}", president.uid)
+        context.bot = bot
         bot.reset_mock()
-        MainController.choose_inspect(bot, update)
+        await MainController.choose_inspect(update, context)
 
         # President should see target's party in the edit message
-        edit_text = str(bot.edit_message_text.call_args)
+        edit_text = str(update.callback_query.edit_message_text.call_args)
         assert target.party in edit_text
         assert target.name in edit_text
         # Group gets a public message that inspection happened (but not the result)
@@ -586,7 +640,8 @@ class TestChooseInspectCallback:
 # =============================================================================
 
 class TestChooseChooseCallback:
-    def test_special_election(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_special_election(self, bot, session5):
         president = session5.engine.alive_players[0]
         target = session5.engine.alive_players[2]
         session5.engine.state.president = president
@@ -595,9 +650,10 @@ class TestChooseChooseCallback:
             "choices": [p for p in session5.engine.alive_players if p.uid != president.uid],
         })
 
-        update = make_callback(f"{session5.cid}_choo_{target.uid}", president.uid)
+        update, context = make_callback(f"{session5.cid}_choo_{target.uid}", president.uid)
+        context.bot = bot
         bot.reset_mock()
-        MainController.choose_choose(bot, update)
+        await MainController.choose_choose(update, context)
 
         # Group message about the special election
         texts = sent_texts(bot)
@@ -607,7 +663,8 @@ class TestChooseChooseCallback:
         assert action == Action.NOMINATE_CHANCELLOR
         assert ctx["president"] == target
 
-    def test_special_election_edits_president_message(self, bot, session5):
+    @pytest.mark.asyncio
+    async def test_special_election_edits_president_message(self, bot, session5):
         president = session5.engine.alive_players[0]
         target = session5.engine.alive_players[2]
         session5.engine.state.president = president
@@ -616,11 +673,12 @@ class TestChooseChooseCallback:
             "choices": [p for p in session5.engine.alive_players if p.uid != president.uid],
         })
 
-        update = make_callback(f"{session5.cid}_choo_{target.uid}", president.uid)
+        update, context = make_callback(f"{session5.cid}_choo_{target.uid}", president.uid)
+        context.bot = bot
         bot.reset_mock()
-        MainController.choose_choose(bot, update)
+        await MainController.choose_choose(update, context)
 
-        bot.edit_message_text.assert_called_once()
-        edit_text = str(bot.edit_message_text.call_args)
+        update.callback_query.edit_message_text.assert_called_once()
+        edit_text = str(update.callback_query.edit_message_text.call_args)
         assert target.name in edit_text
         assert "next president" in edit_text

@@ -3,7 +3,6 @@
 import random
 from random import randrange
 from enum import Enum, auto
-from typing import Dict, List, Optional, Tuple
 
 from Constants.Cards import playerSets
 from Boardgamebox.Board import Board
@@ -45,9 +44,9 @@ class GameEngine:
             engine.step(choice)
     """
 
-    def __init__(self, num_players: int = 5, names: Optional[List[str]] = None,
-                 players: Optional[Dict[int, str]] = None,
-                 seed: Optional[int] = None):
+    def __init__(self, num_players: int = 5, names: list[str] | None = None,
+                 players: dict[int, str] | None = None,
+                 seed: int | None = None):
         if seed is not None:
             random.seed(seed)
 
@@ -65,13 +64,14 @@ class GameEngine:
                 self.game.add_player(i, Player(names[i], i))
 
         self._assign_roles(num_players)
-        self.game.board = Board(num_players, self.game)
+        self._board = Board(num_players, self.game)
+        self.game.board = self._board
         self.game.shuffle_player_sequence()
-        self.game.board.state.player_counter = 0
+        self._board.state.player_counter = 0
 
-        self.log: List[str] = []
+        self.log: list[str] = []
         self.end_code: EndCode = EndCode.RUNNING
-        self._pending: Optional[Tuple[Action, dict]] = None
+        self._pending: tuple[Action, dict] | None = None
         self._advance_to_nomination()
 
     @property
@@ -80,38 +80,48 @@ class GameEngine:
 
     @property
     def state(self):
-        return self.game.board.state
+        return self._board.state
 
     @property
     def board(self) -> Board:
-        return self.game.board
+        return self._board
 
     @property
-    def players(self) -> Dict[int, Player]:
+    def players(self) -> dict[int, Player]:
         return self.game.playerlist
 
     @property
-    def alive_players(self) -> List[Player]:
+    def alive_players(self) -> list[Player]:
         return list(self.game.player_sequence)
 
     @property
-    def president(self) -> Optional[Player]:
+    def president(self) -> Player | None:
         return self.state.president
 
     @property
-    def chancellor(self) -> Optional[Player]:
+    def chancellor(self) -> Player | None:
         return self.state.chancellor
 
-    def pending_action(self) -> Optional[Tuple[Action, dict]]:
+    @property
+    def current_president(self) -> Player:
+        assert self.state.president is not None
+        return self.state.president
+
+    @property
+    def current_chancellor(self) -> Player:
+        assert self.state.chancellor is not None
+        return self.state.chancellor
+
+    def pending_action(self) -> tuple[Action, dict] | None:
         """Returns (Action, context_dict) describing what decision is needed next."""
         return self._pending
 
     def step(self, choice) -> None:
         """Provide the decision for the current pending action."""
-        if self.game_over:
+        if self.game_over or self._pending is None:
             raise GameOver(f"Game is already over: {self.end_code}")
 
-        action, ctx = self._pending
+        action, _ = self._pending
         handlers = {
             Action.NOMINATE_CHANCELLOR: self._do_nominate,
             Action.VOTE: self._do_vote,
@@ -124,9 +134,10 @@ class GameEngine:
         }
         handlers[action](choice)
 
-    def eligible_chancellors(self) -> List[Player]:
+    def eligible_chancellors(self) -> list[Player]:
         """Returns list of players eligible to be nominated as chancellor."""
         s = self.state
+        assert s.nominated_president is not None
         pres_uid = s.president.uid if s.president else None
         chan_uid = s.chancellor.uid if s.chancellor else None
         result = []
@@ -180,6 +191,7 @@ class GameEngine:
         })
 
     def _do_nominate(self, chancellor: Player) -> None:
+        assert self.state.nominated_president is not None
         self.state.nominated_chancellor = chancellor
         self._log(f"{self.state.nominated_president.name} nominated {chancellor.name} as chancellor.")
         self._pending = (Action.VOTE, {
@@ -188,8 +200,9 @@ class GameEngine:
             "voters": list(self.alive_players),
         })
 
-    def _do_vote(self, votes: Dict[int, bool]) -> None:
-        """votes: dict of {player_uid: bool} where True=Ja, False=Nein"""
+    def _do_vote(self, votes: dict[int, bool]) -> None:
+        assert self.state.nominated_president is not None
+        assert self.state.nominated_chancellor is not None
         ja_count = sum(1 for v in votes.values() if v)
         total = len(self.game.player_sequence)
         vote_text = ", ".join(
@@ -216,6 +229,7 @@ class GameEngine:
                 self._next_round()
 
     def _voting_aftermath_success(self) -> None:
+        assert self.state.chancellor is not None
         if self.state.fascist_track >= 3 and self.state.chancellor.role == "Hitler":
             self._end_game(EndCode.FASCIST_HITLER_CHANCELLOR)
             return
@@ -225,6 +239,7 @@ class GameEngine:
         self._draw_policies()
 
     def _draw_policies(self) -> None:
+        assert self.state.president is not None
         self.state.veto_refused = False
         self._shuffle_if_needed()
         for _ in range(3):
@@ -248,7 +263,7 @@ class GameEngine:
 
     def _do_chancellor_enact(self, choice: str) -> None:
         if choice == "veto":
-            self._log(f"Chancellor {self.state.chancellor.name} proposed veto.")
+            self._log(f"Chancellor {self.current_chancellor.name} proposed veto.")
             self._pending = (Action.VETO_CHOICE, {
                 "president": self.state.president,
                 "policies": list(self.state.drawn_policies),
@@ -303,19 +318,19 @@ class GameEngine:
                 self._log(f"President peeked: {top3}")
                 self._next_round()
             elif action == "kill":
-                killable = [p for p in self.alive_players if p.uid != self.state.president.uid]
+                killable = [p for p in self.alive_players if p.uid != self.current_president.uid]
                 self._pending = (Action.EXECUTIVE_KILL, {
                     "president": self.state.president,
                     "choices": killable,
                 })
             elif action == "inspect":
-                inspectable = [p for p in self.alive_players if p.uid != self.state.president.uid]
+                inspectable = [p for p in self.alive_players if p.uid != self.current_president.uid]
                 self._pending = (Action.EXECUTIVE_INSPECT, {
                     "president": self.state.president,
                     "choices": inspectable,
                 })
             elif action == "choose":
-                choosable = [p for p in self.alive_players if p.uid != self.state.president.uid]
+                choosable = [p for p in self.alive_players if p.uid != self.current_president.uid]
                 self._pending = (Action.EXECUTIVE_SPECIAL_ELECTION, {
                     "president": self.state.president,
                     "choices": choosable,
@@ -330,19 +345,19 @@ class GameEngine:
         if self.game.player_sequence.index(target) <= self.state.player_counter:
             self.state.player_counter -= 1
         self.game.player_sequence.remove(target)
-        self._log(f"President {self.state.president.name} killed {target.name} ({target.role}).")
+        self._log(f"President {self.current_president.name} killed {target.name} ({target.role}).")
         if target.role == "Hitler":
             self._end_game(EndCode.LIBERAL_KILLED_HITLER)
         else:
             self._next_round()
 
     def _do_inspect(self, target: Player) -> None:
-        self._log(f"President {self.state.president.name} inspected {target.name}: {target.party}.")
+        self._log(f"President {self.current_president.name} inspected {target.name}: {target.party}.")
         self._next_round()
 
     def _do_special_election(self, target: Player) -> None:
         self.state.chosen_president = target
-        self._log(f"President {self.state.president.name} chose {target.name} as next president.")
+        self._log(f"President {self.current_president.name} chose {target.name} as next president.")
         self._next_round()
 
     def _do_anarchy(self) -> None:

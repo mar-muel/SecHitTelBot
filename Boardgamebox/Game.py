@@ -1,12 +1,16 @@
 from random import shuffle
 
-class Game(object):
-    def __init__(self, cid, initiator):
-        self.playerlist = {}
-        self.player_sequence = []
+from Boardgamebox.Board import Board
+from Boardgamebox.Player import Player
+
+
+class Game:
+    def __init__(self, cid: int, initiator: int):
+        self.playerlist: dict[int, Player] = {}
+        self.player_sequence: list[Player] = []
         self.cid = cid
         self.initiator = initiator
-        self.board = None
+        self.board: Board | None = None
 
     def add_player(self, uid, player):
         self.playerlist[uid] = player
