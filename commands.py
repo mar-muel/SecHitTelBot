@@ -193,11 +193,11 @@ async def command_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif len(session.playerlist) == 1:
                 await context.bot.send_message(session.cid,
                     f"{fname} has joined the game. There is currently "
-                    f"{len(session.playerlist)} player in the game and you need 5-10 players.")
+                    f"{len(session.playerlist)} player in the game and you need {MIN_PLAYERS}-10 players.")
             else:
                 await context.bot.send_message(session.cid,
                     f"{fname} has joined the game. There are currently "
-                    f"{len(session.playerlist)} players in the game and you need 5-10 players.")
+                    f"{len(session.playerlist)} players in the game and you need {MIN_PLAYERS}-10 players.")
 
 
 async def command_startgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -270,7 +270,7 @@ async def command_votes(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             history_text += f"{session.playerlist[player.uid].name} didn't register a vote.\n"
                     await context.bot.send_message(cid, history_text)
                 else:
-                    await context.bot.send_message(cid, "Five minutes must pass to see the votes")
+                    await context.bot.send_message(cid, "One minute must pass before you can see the votes.")
         else:
             await context.bot.send_message(cid, "There is no game in this chat. Create a new game with /newgame")
     except Exception as e:
@@ -299,7 +299,7 @@ async def command_calltovote(update: Update, context: ContextTypes.DEFAULT_TYPE)
                                              f"(tg://user?id={player.uid}).\n")
                     await context.bot.send_message(cid, text=history_text, parse_mode=constants.ParseMode.MARKDOWN)
                 else:
-                    await context.bot.send_message(cid, "Five minutes must pass to see call to vote")
+                    await context.bot.send_message(cid, "One minute must pass before you can call to vote.")
         else:
             await context.bot.send_message(cid, "There is no game in this chat. Create a new game with /newgame")
     except Exception as e:

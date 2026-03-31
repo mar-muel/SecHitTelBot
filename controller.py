@@ -244,7 +244,7 @@ async def handle_voting(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chan_name = ctx["chancellor"].name
 
         await callback.edit_message_text(
-            f"Thank you for your vote: {answer} to a President {pres_name} and a Chancellor {chan_name}")
+            f"Thank you for your vote: {answer} to President {pres_name} and Chancellor {chan_name}")
 
         if uid not in session.pending_votes:
             session.pending_votes[uid] = (answer == "Ja")
@@ -291,9 +291,9 @@ async def finish_voting(bot, session: GameSession):
     if not passed and failed_before == 2:
         await bot.send_message(session.cid, "ANARCHY!!")
         if session.engine.state.liberal_track > lib_before:
-            await bot.send_message(session.cid, "The top most policy was enacted: liberal")
+            await bot.send_message(session.cid, "The topmost policy was enacted: liberal")
         elif session.engine.state.fascist_track > fasc_before:
-            await bot.send_message(session.cid, "The top most policy was enacted: fascist")
+            await bot.send_message(session.cid, "The topmost policy was enacted: fascist")
 
     if session.engine.game_over:
         await end_game(bot, session)
@@ -404,9 +404,9 @@ async def choose_veto(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if failed_before == 2:
                 await context.bot.send_message(session.cid, "ANARCHY!!")
                 if session.engine.state.liberal_track > lib_before:
-                    await context.bot.send_message(session.cid, "The top most policy was enacted: liberal")
+                    await context.bot.send_message(session.cid, "The topmost policy was enacted: liberal")
                 elif session.engine.state.fascist_track > fasc_before:
-                    await context.bot.send_message(session.cid, "The top most policy was enacted: fascist")
+                    await context.bot.send_message(session.cid, "The topmost policy was enacted: fascist")
 
             if session.engine.game_over:
                 await end_game(context.bot, session)
@@ -540,13 +540,13 @@ def print_player_info(player_number):
     elif player_number == 6:
         return "There are 4 Liberals, 1 Fascist and Hitler. Hitler knows who the Fascist is."
     elif player_number == 7:
-        return "There are 4 Liberals, 2 Fascist and Hitler. Hitler doesn't know who the Fascists are."
+        return "There are 4 Liberals, 2 Fascists and Hitler. Hitler doesn't know who the Fascists are."
     elif player_number == 8:
-        return "There are 5 Liberals, 2 Fascist and Hitler. Hitler doesn't know who the Fascists are."
+        return "There are 5 Liberals, 2 Fascists and Hitler. Hitler doesn't know who the Fascists are."
     elif player_number == 9:
-        return "There are 5 Liberals, 3 Fascist and Hitler. Hitler doesn't know who the Fascists are."
+        return "There are 5 Liberals, 3 Fascists and Hitler. Hitler doesn't know who the Fascists are."
     elif player_number == 10:
-        return "There are 6 Liberals, 3 Fascist and Hitler. Hitler doesn't know who the Fascists are."
+        return "There are 6 Liberals, 3 Fascists and Hitler. Hitler doesn't know who the Fascists are."
 
 
 async def end_game(bot, session, cancelled=False):
