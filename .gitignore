@@ -34,3 +34,7 @@ logs/*.log
 
 # Runtime data
 stats.json
+
+# Simulation outputs
+plots/
+sim_logs/
