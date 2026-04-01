@@ -346,6 +346,7 @@ class GameEngine:
     def _do_anarchy(self) -> None:
         self.state.president = None
         self.state.chancellor = None
+        self._shuffle_if_needed()
         top_policy = self.board.policies.pop(0)
         self.state.failed_votes = 0
         self._log("ANARCHY! Top policy enacted.")

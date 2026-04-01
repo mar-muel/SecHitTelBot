@@ -15,6 +15,13 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=1.3.0",
 ]
+sim = [
+    "matplotlib>=3.9",
+    "pydantic>=2.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.pyright]
+ignore = ["simulate.py", "plot_simulations.py"]
