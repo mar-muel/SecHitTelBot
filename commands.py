@@ -272,6 +272,11 @@ async def command_votes(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             history_text += f"{session.playerlist[player.uid].name} registered a vote.\n"
                         else:
                             history_text += f"{session.playerlist[player.uid].name} didn't register a vote.\n"
+                    if session.config.vote_timeout:
+                        elapsed = (datetime.datetime.now() - session.dateinitvote).total_seconds()
+                        remaining = controller.VOTE_TIMEOUT_SECONDS - elapsed
+                        hours, minutes = int(remaining // 3600), int((remaining % 3600) // 60)
+                        history_text += f"\nTime remaining: {hours}h {minutes}m"
                     await context.bot.send_message(cid, history_text)
                 else:
                     await context.bot.send_message(cid, "One minute must pass before you can see the votes.")

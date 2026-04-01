@@ -20,7 +20,7 @@ import controller
 import stats
 from config import TOKEN
 
-logging.basicConfig(format='%(asctime)s [%(levelname)-8s] %(name)s  %(message)s',
+logging.basicConfig(format='%(asctime)s.%(msecs)03.0f [%(levelname)-8s] %(name)s  %(message)s',
                 datefmt='%H:%M:%S',
                 level=logging.INFO,
                 handlers=[
@@ -37,6 +37,7 @@ def main():
     logger.info("Starting bot...")
 
     app = Application.builder().token(TOKEN).build()
+    controller._job_queue = app.job_queue
 
     app.add_handler(CommandHandler("start", commands.command_start))
     app.add_handler(CommandHandler("help", commands.command_help))

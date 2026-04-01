@@ -8,7 +8,7 @@ import re
 from typing import assert_never
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import ContextTypes
+from telegram.ext import ContextTypes, JobQueue
 
 import stats
 from boardgamebox.game import Game
@@ -18,7 +18,7 @@ from game_types import Action, EndCode, ExecutivePower, Role
 from narrator import GameNarrator
 
 import datetime
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field
 
 
 logger = logging.getLogger(__name__)
@@ -34,6 +34,12 @@ class Feature:
 
 FEATURES: list[Feature] = [
     Feature(
+        key="vote_timeout",
+        name="Vote Timeout",
+        description="Players who don't vote within 24h are skipped (not counted). "
+                    "Min 3 real votes required for a valid election.",
+    ),
+    Feature(
         key="ai_narration",
         name="AI Narration",
         description="An AI narrator adds dramatic flair to game events, "
@@ -46,6 +52,12 @@ FEATURES: list[Feature] = [
                     "in the group chat.",
     ),
 ]
+
+VOTE_TIMEOUT_SECONDS = 24 * 60 * 60
+VOTE_REMINDER_SECONDS = 23 * 60 * 60
+MIN_REAL_VOTES = 3
+
+_job_queue: JobQueue | None = None
 
 
 @dataclass
@@ -74,9 +86,11 @@ class GameSession:
         self.initiator = initiator
         self.lobby = Game(cid, initiator)
         self.engine: GameEngine | None = None
-        self.pending_votes: dict[int, bool] = {}
+        self.pending_votes: dict[int, bool | None] = {}
         self.dateinitvote: datetime.datetime | None = None
         self.config = GameConfig()
+        self.vote_timeout_job_name: str | None = None
+        self.vote_reminder_job_name: str | None = None
         self.narrator: GameNarrator = GameNarrator()
 
     @property
@@ -138,6 +152,12 @@ async def handle_config(update: Update, context: ContextTypes.DEFAULT_TYPE):
     action = regex.group(2)
     try:
         session = games[cid]
+        uid = callback.from_user.id
+        if uid != session.initiator:
+            status = (await context.bot.get_chat_member(cid, uid)).status
+            if status not in ("administrator", "creator"):
+                await callback.answer("Only the game initiator or a group admin can change settings.")
+                return
         if action in session.config.features:
             session.config.toggle(action)
             await callback.edit_message_text(
@@ -196,6 +216,63 @@ async def record_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(cid, f"📖 {response}")
 
 
+def _cancel_vote_jobs(session: GameSession):
+    if _job_queue is None:
+        return
+    for name in (session.vote_timeout_job_name, session.vote_reminder_job_name):
+        if name:
+            for job in _job_queue.get_jobs_by_name(name):
+                job.schedule_removal()
+    session.vote_timeout_job_name = None
+    session.vote_reminder_job_name = None
+
+
+def _schedule_vote_jobs(session: GameSession):
+    if _job_queue is None:
+        return
+    _cancel_vote_jobs(session)
+    cid = session.cid
+    data = {"cid": cid}
+    _job_queue.run_once(_vote_reminder_callback, when=VOTE_REMINDER_SECONDS,
+                        name=f"vote_reminder_{cid}", data=data)
+    _job_queue.run_once(_vote_timeout_callback, when=VOTE_TIMEOUT_SECONDS,
+                        name=f"vote_timeout_{cid}", data=data)
+    session.vote_reminder_job_name = f"vote_reminder_{cid}"
+    session.vote_timeout_job_name = f"vote_timeout_{cid}"
+
+
+async def _vote_reminder_callback(context):
+    cid = context.job.data["cid"]
+    session = games.get(cid)
+    if not session or not session.engine or not session.dateinitvote:
+        return
+    missing = [p for p in session.engine.alive_players if p.uid not in session.pending_votes]
+    if not missing:
+        return
+    remaining = VOTE_TIMEOUT_SECONDS - VOTE_REMINDER_SECONDS
+    mins = remaining // 60
+    time_left = f"{mins} minute{'s' if mins != 1 else ''}" if remaining < 3600 else f"{remaining // 3600} hour{'s' if remaining >= 7200 else ''}"
+    names = ", ".join(p.name for p in missing)
+    await context.bot.send_message(cid, f"Reminder: {time_left} left to vote! Still waiting on: {names}")
+    for p in missing:
+        await context.bot.send_message(p.uid,
+            f"Reminder: You have {time_left} left to vote! A blank vote will be submitted if you don't.")
+
+
+async def _vote_timeout_callback(context):
+    cid = context.job.data["cid"]
+    session = games.get(cid)
+    if not session or not session.engine or not session.dateinitvote:
+        return
+    pending = session.engine.pending_action()
+    if pending is None or pending[0] != Action.VOTE:
+        return
+    for p in session.engine.alive_players:
+        if p.uid not in session.pending_votes:
+            session.pending_votes[p.uid] = None
+    await finish_voting(context.bot, session)
+
+
 async def present_action(bot, session: GameSession):
     """Map the engine's current pending action to Telegram inline keyboards."""
     assert session.engine is not None
@@ -233,6 +310,8 @@ async def present_action(bot, session: GameSession):
                 await bot.send_message(p.uid,
                     f"Do you want to elect President {pres.name} and Chancellor {chan.name}?",
                     reply_markup=markup)
+            if session.config.vote_timeout:
+                _schedule_vote_jobs(session)
 
         case Action.PRESIDENT_DISCARD:
             president = ctx["president"]
@@ -328,9 +407,9 @@ async def present_action(bot, session: GameSession):
             assert_never(unreachable)
 
 
-##
+###
 # Callback handlers
-##
+###
 
 async def nominate_chosen_chancellor(update: Update, context: ContextTypes.DEFAULT_TYPE):
     callback = update.callback_query
@@ -378,6 +457,7 @@ async def handle_voting(update: Update, context: ContextTypes.DEFAULT_TYPE):
             session.pending_votes[uid] = (answer == "Ja")
 
         if len(session.pending_votes) == len(session.engine.alive_players):
+            _cancel_vote_jobs(session)
             await finish_voting(context.bot, session)
     except Exception as e:
         logger.error(f"handle_voting error: {e}")
@@ -389,13 +469,23 @@ async def finish_voting(bot, session: GameSession):
     votes = session.pending_votes
     session.dateinitvote = None
 
+    real_votes = {uid: v for uid, v in votes.items() if v is not None}
+    has_blanks = len(real_votes) < len(votes)
+
     voting_text = ""
     for p in session.engine.alive_players:
-        answer = "Ja" if votes[p.uid] else "Nein"
-        voting_text += f"{p.name} voted {answer}!\n"
+        v = votes[p.uid]
+        if v is None:
+            voting_text += f"{p.name} did not vote in time (not counted)\n"
+        else:
+            voting_text += f"{p.name} voted {'Ja' if v else 'Nein'}!\n"
 
-    ja_count = sum(1 for v in votes.values() if v)
-    passed = ja_count > len(session.engine.alive_players) / 2
+    if session.config.vote_timeout and has_blanks and len(real_votes) < MIN_REAL_VOTES:
+        passed = False
+        voting_text += (f"Not enough real votes ({len(real_votes)}/{MIN_REAL_VOTES} required). "
+                        f"Election auto-fails!")
+    else:
+        passed = sum(real_votes.values()) > len(real_votes) / 2
 
     assert session.engine.state.nominated_president is not None
     assert session.engine.state.nominated_chancellor is not None
@@ -408,14 +498,17 @@ async def finish_voting(bot, session: GameSession):
     if passed:
         voting_text += f"Hail President {pres_name}! Hail Chancellor {chan_name}!"
     else:
-        voting_text += "The people didn't like the two candidates!"
+        if not (session.config.vote_timeout and has_blanks and len(real_votes) < MIN_REAL_VOTES):
+            voting_text += "The people didn't like the two candidates!"
     await bot.send_message(session.cid, voting_text)
     await maybe_narrate(bot, session, "vote_passed" if passed else "vote_failed", {
         "president": pres_name, "chancellor": chan_name,
         "failed_votes": failed_before + (0 if passed else 1),
     })
 
-    session.engine.step(votes)
+    blank_fill = passed
+    engine_votes = {uid: (v if v is not None else blank_fill) for uid, v in votes.items()}
+    session.engine.step(engine_votes)
     session.pending_votes = {}
 
     # Anarchy messaging must come before game_over check, because anarchy
@@ -451,8 +544,7 @@ async def choose_policy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         session = games[cid]
         assert session.engine is not None
-        uid = callback.from_user.id
-        action, ctx = session.engine.pending_action()  # type: ignore[misc]
+        action, _ = session.engine.pending_action()  # type: ignore[misc]
 
         if action == Action.PRESIDENT_DISCARD:
             await callback.edit_message_text(f"The policy {answer} will be discarded!")
@@ -524,7 +616,6 @@ async def choose_veto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         session = games[cid]
         assert session.engine is not None
-        uid = callback.from_user.id
         pres_name = session.engine.current_president.name
         chan_name = session.engine.current_chancellor.name
 
@@ -729,11 +820,10 @@ async def end_game(bot, session, cancelled=False):
 
     stats.save()
 
+    _cancel_vote_jobs(session)
     if session.cid in games:
         del games[session.cid]
 
 
-async def error_handler(update, context: ContextTypes.DEFAULT_TYPE):
-    logger.error(f'Update caused error "{context.error}"', exc_info=context.error)
-
-
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    logger.error(f"Update {update} caused error", exc_info=context.error)
