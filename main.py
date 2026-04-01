@@ -17,11 +17,11 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 
 import commands
 import controller
+import persistence
 import stats
-from config import TOKEN
+from config import GAME_STATE_PATH, TOKEN
 
-logging.basicConfig(format='%(asctime)s.%(msecs)03.0f [%(levelname)-8s] %(name)s  %(message)s',
-                datefmt='%H:%M:%S',
+logging.basicConfig(format='%(asctime)s [%(levelname)-5.5s] [%(name)-12.12s]: %(message)s',
                 level=logging.INFO,
                 handlers=[
                     logging.FileHandler('logs/logging.log'),
@@ -31,13 +31,18 @@ logging.basicConfig(format='%(asctime)s.%(msecs)03.0f [%(levelname)-8s] %(name)s
 logger = logging.getLogger(__name__)
 
 
+async def _save_state(app):
+    persistence.save_games(GAME_STATE_PATH)
+
+
 def main():
     controller.games.clear()
     stats.load()
     logger.info("Starting bot...")
 
-    app = Application.builder().token(TOKEN).build()
+    app = Application.builder().token(TOKEN).post_shutdown(_save_state).build()
     controller._job_queue = app.job_queue
+    persistence.load_games(GAME_STATE_PATH)
 
     app.add_handler(CommandHandler("start", commands.command_start))
     app.add_handler(CommandHandler("help", commands.command_help))
