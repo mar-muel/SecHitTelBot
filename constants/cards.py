@@ -1,196 +1,54 @@
 from dataclasses import dataclass
 
+from game_types import ExecutivePower as EP, Policy as P, Role as R
+
 
 @dataclass(frozen=True)
 class PlayerSet:
-    roles: list[str]
-    track: list[str | None]
+    roles: list[R]
+    track: list[EP]
 
 
 PLAYER_SETS: dict[int, PlayerSet] = {
     # only for testing purposes
     2: PlayerSet(
-        roles=[
-            "Liberal",
-            "Hitler"
-        ],
-        track=[
-            None,
-            None,
-            "policy",
-            "kill",
-            "kill",
-            "win"
-        ]
+        roles=[R.LIBERAL, R.HITLER],
+        track=[EP.NONE, EP.NONE, EP.POLICY, EP.KILL, EP.KILL, EP.WIN],
     ),
     # only for testing purposes
     3: PlayerSet(
-        roles=[
-            "Liberal",
-            "Fascist",
-            "Hitler"
-        ],
-        track=[
-            None,
-            None,
-            "policy",
-            "kill",
-            "kill",
-            "win"
-        ]
+        roles=[R.LIBERAL, R.FASCIST, R.HITLER],
+        track=[EP.NONE, EP.NONE, EP.POLICY, EP.KILL, EP.KILL, EP.WIN],
     ),
     # only for testing purposes
     4: PlayerSet(
-        roles=[
-            "Liberal",
-            "Liberal",
-            "Fascist",
-            "Hitler"
-        ],
-        track=[
-            None,
-            None,
-            "policy",
-            "kill",
-            "kill",
-            "win"
-        ]
+        roles=[R.LIBERAL, R.LIBERAL, R.FASCIST, R.HITLER],
+        track=[EP.NONE, EP.NONE, EP.POLICY, EP.KILL, EP.KILL, EP.WIN],
     ),
     5: PlayerSet(
-        roles=[
-            "Liberal",
-            "Liberal",
-            "Liberal",
-            "Fascist",
-            "Hitler"
-        ],
-        track=[
-            None,
-            None,
-            "policy",
-            "kill",
-            "kill",
-            "win"
-        ]
+        roles=[R.LIBERAL, R.LIBERAL, R.LIBERAL, R.FASCIST, R.HITLER],
+        track=[EP.NONE, EP.NONE, EP.POLICY, EP.KILL, EP.KILL, EP.WIN],
     ),
     6: PlayerSet(
-        roles=[
-            "Liberal",
-            "Liberal",
-            "Liberal",
-            "Liberal",
-            "Fascist",
-            "Hitler"
-        ],
-        track=[
-            None,
-            None,
-            "policy",
-            "kill",
-            "kill",
-            "win"
-        ]
+        roles=[R.LIBERAL, R.LIBERAL, R.LIBERAL, R.LIBERAL, R.FASCIST, R.HITLER],
+        track=[EP.NONE, EP.NONE, EP.POLICY, EP.KILL, EP.KILL, EP.WIN],
     ),
     7: PlayerSet(
-        roles=[
-            "Liberal",
-            "Liberal",
-            "Liberal",
-            "Liberal",
-            "Fascist",
-            "Fascist",
-            "Hitler"
-        ],
-        track=[
-            None,
-            "inspect",
-            "choose",
-            "kill",
-            "kill",
-            "win"
-        ]
+        roles=[R.LIBERAL, R.LIBERAL, R.LIBERAL, R.LIBERAL, R.FASCIST, R.FASCIST, R.HITLER],
+        track=[EP.NONE, EP.INSPECT, EP.CHOOSE, EP.KILL, EP.KILL, EP.WIN],
     ),
     8: PlayerSet(
-        roles=[
-            "Liberal",
-            "Liberal",
-            "Liberal",
-            "Liberal",
-            "Liberal",
-            "Fascist",
-            "Fascist",
-            "Hitler"
-        ],
-        track=[
-            None,
-            "inspect",
-            "choose",
-            "kill",
-            "kill",
-            "win"
-        ]
+        roles=[R.LIBERAL, R.LIBERAL, R.LIBERAL, R.LIBERAL, R.LIBERAL, R.FASCIST, R.FASCIST, R.HITLER],
+        track=[EP.NONE, EP.INSPECT, EP.CHOOSE, EP.KILL, EP.KILL, EP.WIN],
     ),
     9: PlayerSet(
-        roles=[
-            "Liberal",
-            "Liberal",
-            "Liberal",
-            "Liberal",
-            "Liberal",
-            "Fascist",
-            "Fascist",
-            "Fascist",
-            "Hitler"
-        ],
-        track=[
-            "inspect",
-            "inspect",
-            "choose",
-            "kill",
-            "kill",
-            "win"
-        ]
+        roles=[R.LIBERAL, R.LIBERAL, R.LIBERAL, R.LIBERAL, R.LIBERAL, R.FASCIST, R.FASCIST, R.FASCIST, R.HITLER],
+        track=[EP.INSPECT, EP.INSPECT, EP.CHOOSE, EP.KILL, EP.KILL, EP.WIN],
     ),
     10: PlayerSet(
-        roles=[
-            "Liberal",
-            "Liberal",
-            "Liberal",
-            "Liberal",
-            "Liberal",
-            "Liberal",
-            "Fascist",
-            "Fascist",
-            "Fascist",
-            "Hitler"
-        ],
-        track=[
-            "inspect",
-            "inspect",
-            "choose",
-            "kill",
-            "kill",
-            "win"
-        ]
+        roles=[R.LIBERAL, R.LIBERAL, R.LIBERAL, R.LIBERAL, R.LIBERAL, R.LIBERAL, R.FASCIST, R.FASCIST, R.FASCIST, R.HITLER],
+        track=[EP.INSPECT, EP.INSPECT, EP.CHOOSE, EP.KILL, EP.KILL, EP.WIN],
     ),
 }
 
-POLICIES = [
-        "liberal",
-        "liberal",
-        "liberal",
-        "liberal",
-        "liberal",
-        "liberal",
-        "fascist",
-        "fascist",
-        "fascist",
-        "fascist",
-        "fascist",
-        "fascist",
-        "fascist",
-        "fascist",
-        "fascist",
-        "fascist",
-        "fascist"
-    ]
+POLICIES = [P.LIBERAL] * 6 + [P.FASCIST] * 11

@@ -5,6 +5,7 @@
 import asyncio
 import logging
 import re
+from typing import assert_never
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
@@ -12,7 +13,8 @@ from telegram.ext import ContextTypes
 import stats
 from boardgamebox.game import Game
 from constants.cards import PLAYER_SETS
-from engine import GameEngine, Action, EndCode
+from engine import GameEngine
+from game_types import Action, EndCode, ExecutivePower, Role
 from narrator import GameNarrator
 
 import datetime
@@ -204,122 +206,126 @@ async def present_action(bot, session: GameSession):
     action, ctx = session.engine.pending_action()  # type: ignore[misc]
     strcid = str(session.cid)
 
-    if action == Action.NOMINATE_CHANCELLOR:
-        president = ctx["president"]
-        await bot.send_message(session.cid,
-            f"The next presidential candidate is {president.name}.\n"
-            f"{president.name}, please nominate a Chancellor in our private chat!")
-        btns = []
-        for p in ctx["eligible"]:
-            btns.append([InlineKeyboardButton(p.name, callback_data=f"{strcid}_chan_{p.uid}")])
-        markup = InlineKeyboardMarkup(btns)
-        await bot.send_message(president.uid, session.engine.board.print_board())
-        await bot.send_message(president.uid, 'Please nominate your chancellor!', reply_markup=markup)
+    match action:
+        case Action.NOMINATE_CHANCELLOR:
+            president = ctx["president"]
+            await bot.send_message(session.cid,
+                f"The next presidential candidate is {president.name}.\n"
+                f"{president.name}, please nominate a Chancellor in our private chat!")
+            btns = []
+            for p in ctx["eligible"]:
+                btns.append([InlineKeyboardButton(p.name, callback_data=f"{strcid}_chan_{p.uid}")])
+            markup = InlineKeyboardMarkup(btns)
+            await bot.send_message(president.uid, session.engine.board.print_board())
+            await bot.send_message(president.uid, 'Please nominate your chancellor!', reply_markup=markup)
 
-    elif action == Action.VOTE:
-        session.pending_votes = {}
-        session.dateinitvote = datetime.datetime.now()
-        pres = ctx["president"]
-        chan = ctx["chancellor"]
-        btns = [[InlineKeyboardButton("Ja", callback_data=f"{strcid}_Ja"),
-                 InlineKeyboardButton("Nein", callback_data=f"{strcid}_Nein")]]
-        markup = InlineKeyboardMarkup(btns)
-        for p in ctx["voters"]:
-            if p is not pres:
-                await bot.send_message(p.uid, session.engine.board.print_board())
-            await bot.send_message(p.uid,
-                f"Do you want to elect President {pres.name} and Chancellor {chan.name}?",
+        case Action.VOTE:
+            session.pending_votes = {}
+            session.dateinitvote = datetime.datetime.now()
+            pres = ctx["president"]
+            chan = ctx["chancellor"]
+            btns = [[InlineKeyboardButton("Ja", callback_data=f"{strcid}_Ja"),
+                     InlineKeyboardButton("Nein", callback_data=f"{strcid}_Nein")]]
+            markup = InlineKeyboardMarkup(btns)
+            for p in ctx["voters"]:
+                if p is not pres:
+                    await bot.send_message(p.uid, session.engine.board.print_board())
+                await bot.send_message(p.uid,
+                    f"Do you want to elect President {pres.name} and Chancellor {chan.name}?",
+                    reply_markup=markup)
+
+        case Action.PRESIDENT_DISCARD:
+            president = ctx["president"]
+            btns = []
+            for policy in ctx["policies"]:
+                btns.append([InlineKeyboardButton(policy, callback_data=f"{strcid}_{policy}")])
+            markup = InlineKeyboardMarkup(btns)
+            await bot.send_message(president.uid,
+                "You drew the following 3 policies. Which one do you want to discard?",
                 reply_markup=markup)
 
-    elif action == Action.PRESIDENT_DISCARD:
-        president = ctx["president"]
-        btns = []
-        for policy in ctx["policies"]:
-            btns.append([InlineKeyboardButton(policy, callback_data=f"{strcid}_{policy}")])
-        markup = InlineKeyboardMarkup(btns)
-        await bot.send_message(president.uid,
-            "You drew the following 3 policies. Which one do you want to discard?",
-            reply_markup=markup)
+        case Action.CHANCELLOR_ENACT:
+            chancellor = ctx["chancellor"]
+            pres_name = session.engine.current_president.name
+            btns = []
+            for policy in ctx["policies"]:
+                btns.append([InlineKeyboardButton(policy, callback_data=f"{strcid}_{policy}")])
+            if ctx.get("can_veto"):
+                btns.append([InlineKeyboardButton("Veto", callback_data=f"{strcid}_veto")])
+            markup = InlineKeyboardMarkup(btns)
+            if session.engine.state.veto_refused:
+                msg = (f"President {pres_name} refused your Veto. "
+                       f"Now you have to choose. Which one do you want to enact?")
+            elif ctx.get("can_veto"):
+                await bot.send_message(session.cid,
+                    f"President {pres_name} gave two policies to Chancellor {chancellor.name}.")
+                msg = (f"President {pres_name} gave you the following 2 policies. "
+                       f"Which one do you want to enact? You can also use your Veto power.")
+            else:
+                msg = (f"President {pres_name} gave you the following 2 policies. "
+                       f"Which one do you want to enact?")
+            await bot.send_message(chancellor.uid, msg, reply_markup=markup)
 
-    elif action == Action.CHANCELLOR_ENACT:
-        chancellor = ctx["chancellor"]
-        pres_name = session.engine.current_president.name
-        btns = []
-        for policy in ctx["policies"]:
-            btns.append([InlineKeyboardButton(policy, callback_data=f"{strcid}_{policy}")])
-        if ctx.get("can_veto"):
-            btns.append([InlineKeyboardButton("Veto", callback_data=f"{strcid}_veto")])
-        markup = InlineKeyboardMarkup(btns)
-        if session.engine.state.veto_refused:
-            msg = (f"President {pres_name} refused your Veto. "
-                   f"Now you have to choose. Which one do you want to enact?")
-        elif ctx.get("can_veto"):
+        case Action.VETO_CHOICE:
+            president = ctx["president"]
+            chan_name = session.engine.current_chancellor.name
+            btns = [[InlineKeyboardButton("Veto! (accept suggestion)", callback_data=f"{strcid}_yesveto")],
+                    [InlineKeyboardButton("No Veto! (refuse suggestion)", callback_data=f"{strcid}_noveto")]]
+            markup = InlineKeyboardMarkup(btns)
+            await bot.send_message(president.uid,
+                f"Chancellor {chan_name} suggested a Veto to you. "
+                f"Do you want to veto (discard) these cards?",
+                reply_markup=markup)
+
+        case Action.EXECUTIVE_KILL:
+            president = ctx["president"]
             await bot.send_message(session.cid,
-                f"President {pres_name} gave two policies to Chancellor {chancellor.name}.")
-            msg = (f"President {pres_name} gave you the following 2 policies. "
-                   f"Which one do you want to enact? You can also use your Veto power.")
-        else:
-            msg = (f"President {pres_name} gave you the following 2 policies. "
-                   f"Which one do you want to enact?")
-        await bot.send_message(chancellor.uid, msg, reply_markup=markup)
+                f"Presidential Power enabled: Execution \U0001F5E1\n"
+                f"President {president.name} has to kill one person. You can "
+                f"discuss the decision now but the President has the final say.")
+            btns = []
+            for p in ctx["choices"]:
+                btns.append([InlineKeyboardButton(p.name, callback_data=f"{strcid}_kill_{p.uid}")])
+            markup = InlineKeyboardMarkup(btns)
+            await bot.send_message(president.uid, session.engine.board.print_board())
+            await bot.send_message(president.uid,
+                'You have to kill one person. You can discuss your decision with the others. Choose wisely!',
+                reply_markup=markup)
 
-    elif action == Action.VETO_CHOICE:
-        president = ctx["president"]
-        chan_name = session.engine.current_chancellor.name
-        btns = [[InlineKeyboardButton("Veto! (accept suggestion)", callback_data=f"{strcid}_yesveto")],
-                [InlineKeyboardButton("No Veto! (refuse suggestion)", callback_data=f"{strcid}_noveto")]]
-        markup = InlineKeyboardMarkup(btns)
-        await bot.send_message(president.uid,
-            f"Chancellor {chan_name} suggested a Veto to you. "
-            f"Do you want to veto (discard) these cards?",
-            reply_markup=markup)
+        case Action.EXECUTIVE_INSPECT:
+            president = ctx["president"]
+            await bot.send_message(session.cid,
+                f"Presidential Power enabled: Investigate Loyalty \U0001F50E\n"
+                f"President {president.name} may see the party membership of one "
+                f"player. The President may share (or lie about!) the results of "
+                f"their investigation at their discretion.")
+            btns = []
+            for p in ctx["choices"]:
+                btns.append([InlineKeyboardButton(p.name, callback_data=f"{strcid}_insp_{p.uid}")])
+            markup = InlineKeyboardMarkup(btns)
+            await bot.send_message(president.uid, session.engine.board.print_board())
+            await bot.send_message(president.uid,
+                'You may see the party membership of one player. Which do you want to know? Choose wisely!',
+                reply_markup=markup)
 
-    elif action == Action.EXECUTIVE_KILL:
-        president = ctx["president"]
-        await bot.send_message(session.cid,
-            f"Presidential Power enabled: Execution \U0001F5E1\n"
-            f"President {president.name} has to kill one person. You can "
-            f"discuss the decision now but the President has the final say.")
-        btns = []
-        for p in ctx["choices"]:
-            btns.append([InlineKeyboardButton(p.name, callback_data=f"{strcid}_kill_{p.uid}")])
-        markup = InlineKeyboardMarkup(btns)
-        await bot.send_message(president.uid, session.engine.board.print_board())
-        await bot.send_message(president.uid,
-            'You have to kill one person. You can discuss your decision with the others. Choose wisely!',
-            reply_markup=markup)
+        case Action.EXECUTIVE_SPECIAL_ELECTION:
+            president = ctx["president"]
+            await bot.send_message(session.cid,
+                f"Presidential Power enabled: Call Special Election \U0001F454\n"
+                f"President {president.name} gets to choose the next presidential "
+                f"candidate. Afterwards the order resumes back to normal.")
+            btns = []
+            for p in ctx["choices"]:
+                btns.append([InlineKeyboardButton(p.name, callback_data=f"{strcid}_choo_{p.uid}")])
+            markup = InlineKeyboardMarkup(btns)
+            await bot.send_message(president.uid, session.engine.board.print_board())
+            await bot.send_message(president.uid,
+                'You get to choose the next presidential candidate. '
+                'Afterwards the order resumes back to normal. Choose wisely!',
+                reply_markup=markup)
 
-    elif action == Action.EXECUTIVE_INSPECT:
-        president = ctx["president"]
-        await bot.send_message(session.cid,
-            f"Presidential Power enabled: Investigate Loyalty \U0001F50E\n"
-            f"President {president.name} may see the party membership of one "
-            f"player. The President may share (or lie about!) the results of "
-            f"their investigation at their discretion.")
-        btns = []
-        for p in ctx["choices"]:
-            btns.append([InlineKeyboardButton(p.name, callback_data=f"{strcid}_insp_{p.uid}")])
-        markup = InlineKeyboardMarkup(btns)
-        await bot.send_message(president.uid, session.engine.board.print_board())
-        await bot.send_message(president.uid,
-            'You may see the party membership of one player. Which do you want to know? Choose wisely!',
-            reply_markup=markup)
-
-    elif action == Action.EXECUTIVE_SPECIAL_ELECTION:
-        president = ctx["president"]
-        await bot.send_message(session.cid,
-            f"Presidential Power enabled: Call Special Election \U0001F454\n"
-            f"President {president.name} gets to choose the next presidential "
-            f"candidate. Afterwards the order resumes back to normal.")
-        btns = []
-        for p in ctx["choices"]:
-            btns.append([InlineKeyboardButton(p.name, callback_data=f"{strcid}_choo_{p.uid}")])
-        markup = InlineKeyboardMarkup(btns)
-        await bot.send_message(president.uid, session.engine.board.print_board())
-        await bot.send_message(president.uid,
-            'You get to choose the next presidential candidate. '
-            'Afterwards the order resumes back to normal. Choose wisely!',
-            reply_markup=markup)
+        case _ as unreachable:
+            assert_never(unreachable)
 
 
 ##
@@ -489,7 +495,7 @@ async def choose_policy(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 fasc_after = session.engine.state.fascist_track
                 if fasc_after > fasc_before:
                     track_action = session.engine.board.fascist_track_actions[fasc_after - 1]
-                    if track_action == "policy":
+                    if track_action == ExecutivePower.POLICY:
                         top3 = session.engine.board.policies[:3]
                         await context.bot.send_message(session.cid,
                             f"Presidential Power enabled: Policy Peek \U0001F52E\n"
@@ -669,14 +675,14 @@ async def inform_players(bot, session):
 async def inform_fascists(bot, session):
     n = len(session.engine.players)
     for uid, p in session.engine.players.items():
-        if p.role == "Fascist":
+        if p.role == Role.FASCIST:
             fascists = session.engine.game.get_fascists()
             if n > 6:
                 others = [f.name for f in fascists if f.uid != uid]
                 await bot.send_message(uid, f"Your fellow fascists are: {', '.join(others)}")
             hitler = session.engine.game.get_hitler()
             await bot.send_message(uid, f"Hitler is: {hitler.name}")
-        elif p.role == "Hitler":
+        elif p.role == Role.HITLER:
             if n <= 6:
                 fascists = session.engine.game.get_fascists()
                 if fascists:
@@ -685,8 +691,8 @@ async def inform_fascists(bot, session):
 
 def print_player_info(player_number):
     roles = PLAYER_SETS[player_number].roles
-    libs = roles.count("Liberal")
-    fascs = roles.count("Fascist")
+    libs = roles.count(Role.LIBERAL)
+    fascs = roles.count(Role.FASCIST)
     fasc_word = "Fascist" if fascs == 1 else "Fascists"
     hitler_info = ("Hitler knows who the Fascist is."
                    if player_number <= 6

@@ -1,4 +1,5 @@
 from boardgamebox.player import Player
+from game_types import Policy
 
 
 class State:
@@ -11,7 +12,7 @@ class State:
         self.nominated_chancellor: Player | None = None
         self.chosen_president: Player | None = None
         self.chancellor: Player | None = None
-        self.drawn_policies: list[str] = []
+        self.drawn_policies: list[Policy] = []
         self.player_counter = 0
         self.veto_refused = False
         self.not_hitlers: list[Player] = []

@@ -1,7 +1,9 @@
-from constants.cards import PLAYER_SETS
-from constants.cards import POLICIES
 import random
+from typing import assert_never
+
+from constants.cards import PLAYER_SETS, POLICIES
 from boardgamebox.state import State
+from game_types import ExecutivePower
 
 class Board:
     def __init__(self, playercount, game):
@@ -26,19 +28,21 @@ class Board:
             if i < self.state.fascist_track:
                 board += u"\u2716\uFE0F" + " " #X
             else:
-                action = self.fascist_track_actions[i]
-                if action == None:
-                    board += u"\u25FB\uFE0F" + " "  # empty
-                elif action == "policy":
-                    board += u"\U0001F52E" + " " # crystal
-                elif action == "inspect":
-                    board += u"\U0001F50E" + " " # inspection glass
-                elif action == "kill":
-                    board += u"\U0001F5E1" + " " # knife
-                elif action == "win":
-                    board += u"\u2620" + " " # skull
-                elif action == "choose":
-                    board += u"\U0001F454" + " " # tie
+                match self.fascist_track_actions[i]:
+                    case ExecutivePower.NONE:
+                        board += u"\u25FB\uFE0F" + " "  # empty
+                    case ExecutivePower.POLICY:
+                        board += u"\U0001F52E" + " " # crystal
+                    case ExecutivePower.INSPECT:
+                        board += u"\U0001F50E" + " " # inspection glass
+                    case ExecutivePower.KILL:
+                        board += u"\U0001F5E1" + " " # knife
+                    case ExecutivePower.WIN:
+                        board += u"\u2620" + " " # skull
+                    case ExecutivePower.CHOOSE:
+                        board += u"\U0001F454" + " " # tie
+                    case _ as unreachable:
+                        assert_never(unreachable)
 
         board += "\n--- Election counter ---\n"
         for i in range(3):

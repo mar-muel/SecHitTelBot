@@ -3,8 +3,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from engine import Action, EndCode
-import controller
+from game_types import Action, EndCode, Policy, Role
 import controller
 from conftest import sent_texts
 
@@ -60,7 +59,7 @@ def step_to_veto_choice(session):
     # so the Hitler-chancellor check doesn't trigger on our chosen chancellor.
     _, ctx = session.engine.pending_action()
     # Pick a non-Hitler chancellor to avoid the game ending
-    non_hitler = [p for p in ctx["eligible"] if p.role != "Hitler"]
+    non_hitler = [p for p in ctx["eligible"] if p.role != Role.HITLER]
     if not non_hitler:
         return False
     session.engine.step(non_hitler[0])
@@ -426,7 +425,7 @@ class TestChoosePolicyCallback:
         """Test the full callback path for a veto proposal."""
         # Get to CHANCELLOR_ENACT with veto available
         _, ctx = session5.engine.pending_action()
-        non_hitler = [p for p in ctx["eligible"] if p.role != "Hitler"]
+        non_hitler = [p for p in ctx["eligible"] if p.role != Role.HITLER]
         if not non_hitler:
             return
         session5.engine.step(non_hitler[0])
@@ -464,7 +463,7 @@ class TestChoosePolicyCallback:
         _, ctx = session5.engine.pending_action()
         chancellor = ctx["chancellor"]
         # Pick a fascist policy if available
-        fascist_policy = next((p for p in ctx["policies"] if p == "fascist"), None)
+        fascist_policy = next((p for p in ctx["policies"] if p == Policy.FASCIST), None)
         if not fascist_policy:
             return
 
@@ -541,10 +540,10 @@ class TestChooseVetoCallback:
 # =============================================================================
 
 class TestChooseKillCallback:
-    def _setup_kill(self, session, target_role="Liberal"):
+    def _setup_kill(self, session, target_role=Role.LIBERAL):
         """Inject engine into EXECUTIVE_KILL state. Returns (president, target)."""
         president = session.engine.alive_players[0]
-        if president.role == "Hitler" and target_role == "Hitler":
+        if president.role == Role.HITLER and target_role == Role.HITLER:
             president = session.engine.alive_players[1]
         target = next(
             p for p in session.engine.alive_players
@@ -559,7 +558,7 @@ class TestChooseKillCallback:
 
     @pytest.mark.asyncio
     async def test_kill_non_hitler(self, bot, session5):
-        president, target = self._setup_kill(session5, "Liberal")
+        president, target = self._setup_kill(session5, Role.LIBERAL)
 
         update, context = make_callback(f"{session5.cid}_kill_{target.uid}", president.uid)
         context.bot = bot
@@ -577,7 +576,7 @@ class TestChooseKillCallback:
 
     @pytest.mark.asyncio
     async def test_kill_hitler_ends_game(self, bot, session5):
-        president, hitler = self._setup_kill(session5, "Hitler")
+        president, hitler = self._setup_kill(session5, Role.HITLER)
 
         update, context = make_callback(f"{session5.cid}_kill_{hitler.uid}", president.uid)
         context.bot = bot
@@ -591,7 +590,7 @@ class TestChooseKillCallback:
 
     @pytest.mark.asyncio
     async def test_kill_edits_president_message(self, bot, session5):
-        president, target = self._setup_kill(session5, "Liberal")
+        president, target = self._setup_kill(session5, Role.LIBERAL)
 
         update, context = make_callback(f"{session5.cid}_kill_{target.uid}", president.uid)
         context.bot = bot

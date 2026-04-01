@@ -1,5 +1,7 @@
 import random
-from engine import GameEngine, Action, EndCode, GameOver
+from typing import assert_never
+from engine import GameEngine
+from game_types import Action, EndCode, GameOver, Role
 import pytest
 
 
@@ -9,28 +11,31 @@ def random_step(engine: GameEngine) -> None:
     assert pending is not None
     action, ctx = pending
 
-    if action == Action.NOMINATE_CHANCELLOR:
-        engine.step(random.choice(ctx["eligible"]))
+    match action:
+        case Action.NOMINATE_CHANCELLOR:
+            engine.step(random.choice(ctx["eligible"]))
 
-    elif action == Action.VOTE:
-        votes = {p.uid: random.choice([True, False]) for p in ctx["voters"]}
-        engine.step(votes)
+        case Action.VOTE:
+            votes = {p.uid: random.choice([True, False]) for p in ctx["voters"]}
+            engine.step(votes)
 
-    elif action == Action.PRESIDENT_DISCARD:
-        engine.step(random.choice(ctx["policies"]))
+        case Action.PRESIDENT_DISCARD:
+            engine.step(random.choice(ctx["policies"]))
 
-    elif action == Action.CHANCELLOR_ENACT:
-        choices = list(ctx["policies"])
-        if ctx.get("can_veto") and random.random() < 0.3:
-            choices.append("veto")
-        engine.step(random.choice(choices))
+        case Action.CHANCELLOR_ENACT:
+            choices = list(ctx["policies"])
+            if ctx.get("can_veto") and random.random() < 0.3:
+                choices.append("veto")
+            engine.step(random.choice(choices))
 
-    elif action == Action.VETO_CHOICE:
-        engine.step(random.choice([True, False]))
+        case Action.VETO_CHOICE:
+            engine.step(random.choice([True, False]))
 
-    elif action in (Action.EXECUTIVE_KILL, Action.EXECUTIVE_INSPECT,
-                    Action.EXECUTIVE_SPECIAL_ELECTION):
-        engine.step(random.choice(ctx["choices"]))
+        case Action.EXECUTIVE_KILL | Action.EXECUTIVE_INSPECT | Action.EXECUTIVE_SPECIAL_ELECTION:
+            engine.step(random.choice(ctx["choices"]))
+
+        case _ as unreachable:
+            assert_never(unreachable)
 
 
 class TestEngineBasics:
@@ -45,16 +50,16 @@ class TestEngineBasics:
     def test_role_distribution_5p(self):
         e = GameEngine(5, seed=42)
         roles = [e.players[uid].role for uid in e.players]
-        assert roles.count("Liberal") == 3
-        assert roles.count("Fascist") == 1
-        assert roles.count("Hitler") == 1
+        assert roles.count(Role.LIBERAL) == 3
+        assert roles.count(Role.FASCIST) == 1
+        assert roles.count(Role.HITLER) == 1
 
     def test_role_distribution_10p(self):
         e = GameEngine(10, seed=42)
         roles = [e.players[uid].role for uid in e.players]
-        assert roles.count("Liberal") == 6
-        assert roles.count("Fascist") == 3
-        assert roles.count("Hitler") == 1
+        assert roles.count(Role.LIBERAL) == 6
+        assert roles.count(Role.FASCIST) == 3
+        assert roles.count(Role.HITLER) == 1
 
     def test_first_pending_is_nomination(self):
         e = GameEngine(5, seed=42)
@@ -72,9 +77,9 @@ class TestEngineBasics:
         assert not e.game_over
         # All players should have roles assigned
         roles = [e.players[uid].role for uid in e.players]
-        assert roles.count("Liberal") == 3
-        assert roles.count("Fascist") == 1
-        assert roles.count("Hitler") == 1
+        assert roles.count(Role.LIBERAL) == 3
+        assert roles.count(Role.FASCIST) == 1
+        assert roles.count(Role.HITLER) == 1
         # Game should be playable
         action, _ = e.pending_action()  # type: ignore[misc]
         assert action == Action.NOMINATE_CHANCELLOR

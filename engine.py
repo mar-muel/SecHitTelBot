@@ -2,35 +2,14 @@
 
 import random
 from random import randrange
-from enum import Enum, auto
+
+from typing import assert_never
 
 from constants.cards import PLAYER_SETS
 from boardgamebox.board import Board
 from boardgamebox.game import Game
 from boardgamebox.player import Player
-
-
-class GameOver(Exception):
-    pass
-
-
-class EndCode(Enum):
-    FASCIST_HITLER_CHANCELLOR = -2
-    FASCIST_POLICIES = -1
-    RUNNING = 0
-    LIBERAL_POLICIES = 1
-    LIBERAL_KILLED_HITLER = 2
-
-
-class Action(Enum):
-    NOMINATE_CHANCELLOR = auto()
-    VOTE = auto()
-    PRESIDENT_DISCARD = auto()
-    CHANCELLOR_ENACT = auto()
-    VETO_CHOICE = auto()
-    EXECUTIVE_KILL = auto()
-    EXECUTIVE_INSPECT = auto()
-    EXECUTIVE_SPECIAL_ELECTION = auto()
+from game_types import Action, EndCode, ExecutivePower, GameOver, Party, Policy, Role
 
 
 class GameEngine:
@@ -159,7 +138,7 @@ class GameEngine:
             idx = randrange(len(available))
             role = available.pop(idx)
             self.game.playerlist[uid].role = role
-            self.game.playerlist[uid].party = "fascist" if role in ("Fascist", "Hitler") else "liberal"
+            self.game.playerlist[uid].party = Party.FASCIST if role in (Role.FASCIST, Role.HITLER) else Party.LIBERAL
 
     def _log(self, msg: str) -> None:
         self.log.append(msg)
@@ -230,10 +209,10 @@ class GameEngine:
 
     def _voting_aftermath_success(self) -> None:
         assert self.state.chancellor is not None
-        if self.state.fascist_track >= 3 and self.state.chancellor.role == "Hitler":
+        if self.state.fascist_track >= 3 and self.state.chancellor.role == Role.HITLER:
             self._end_game(EndCode.FASCIST_HITLER_CHANCELLOR)
             return
-        if self.state.fascist_track >= 3 and self.state.chancellor.role != "Hitler":
+        if self.state.fascist_track >= 3 and self.state.chancellor.role != Role.HITLER:
             if self.state.chancellor not in self.state.not_hitlers:
                 self.state.not_hitlers.append(self.state.chancellor)
         self._draw_policies()
@@ -250,7 +229,7 @@ class GameEngine:
             "policies": list(self.state.drawn_policies),
         })
 
-    def _do_president_discard(self, discard: str) -> None:
+    def _do_president_discard(self, discard: Policy) -> None:
         self.state.drawn_policies.remove(discard)
         self.board.discards.append(discard)
         self._log(f"President discarded: {discard}")
@@ -261,7 +240,7 @@ class GameEngine:
             "can_veto": can_veto,
         })
 
-    def _do_chancellor_enact(self, choice: str) -> None:
+    def _do_chancellor_enact(self, choice: Policy | str) -> None:
         if choice == "veto":
             self._log(f"Chancellor {self.current_chancellor.name} proposed veto.")
             self._pending = (Action.VETO_CHOICE, {
@@ -270,10 +249,11 @@ class GameEngine:
             })
             return
 
-        self.state.drawn_policies.remove(choice)
+        policy = Policy(choice)
+        self.state.drawn_policies.remove(policy)
         self.board.discards.append(self.state.drawn_policies.pop(0))
         assert len(self.state.drawn_policies) == 0
-        self._enact(choice, anarchy=False)
+        self._enact(policy, anarchy=False)
 
     def _do_veto_choice(self, accept: bool) -> None:
         if accept:
@@ -294,8 +274,8 @@ class GameEngine:
                 "can_veto": False,
             })
 
-    def _enact(self, policy: str, anarchy: bool) -> None:
-        if policy == "liberal":
+    def _enact(self, policy: Policy, anarchy: bool) -> None:
+        if policy == Policy.LIBERAL:
             self.state.liberal_track += 1
         else:
             self.state.fascist_track += 1
@@ -311,32 +291,35 @@ class GameEngine:
 
         self._shuffle_if_needed()
 
-        if not anarchy and policy == "fascist":
-            action = self.board.fascist_track_actions[self.state.fascist_track - 1]
-            if action == "policy":
-                top3 = self.board.policies[:3]
-                self._log(f"President peeked: {top3}")
-                self._next_round()
-            elif action == "kill":
-                killable = [p for p in self.alive_players if p.uid != self.current_president.uid]
-                self._pending = (Action.EXECUTIVE_KILL, {
-                    "president": self.state.president,
-                    "choices": killable,
-                })
-            elif action == "inspect":
-                inspectable = [p for p in self.alive_players if p.uid != self.current_president.uid]
-                self._pending = (Action.EXECUTIVE_INSPECT, {
-                    "president": self.state.president,
-                    "choices": inspectable,
-                })
-            elif action == "choose":
-                choosable = [p for p in self.alive_players if p.uid != self.current_president.uid]
-                self._pending = (Action.EXECUTIVE_SPECIAL_ELECTION, {
-                    "president": self.state.president,
-                    "choices": choosable,
-                })
-            else:
-                self._next_round()
+        if not anarchy and policy == Policy.FASCIST:
+            power = self.board.fascist_track_actions[self.state.fascist_track - 1]
+            others = [p for p in self.alive_players if p.uid != self.current_president.uid]
+            match power:
+                case ExecutivePower.NONE:
+                    self._next_round()
+                case ExecutivePower.POLICY:
+                    top3 = self.board.policies[:3]
+                    self._log(f"President peeked: {top3}")
+                    self._next_round()
+                case ExecutivePower.KILL:
+                    self._pending = (Action.EXECUTIVE_KILL, {
+                        "president": self.state.president,
+                        "choices": others,
+                    })
+                case ExecutivePower.INSPECT:
+                    self._pending = (Action.EXECUTIVE_INSPECT, {
+                        "president": self.state.president,
+                        "choices": others,
+                    })
+                case ExecutivePower.CHOOSE:
+                    self._pending = (Action.EXECUTIVE_SPECIAL_ELECTION, {
+                        "president": self.state.president,
+                        "choices": others,
+                    })
+                case ExecutivePower.WIN:
+                    self._next_round()
+                case _ as unreachable:
+                    assert_never(unreachable)
         else:
             self._next_round()
 
@@ -346,7 +329,7 @@ class GameEngine:
             self.state.player_counter -= 1
         self.game.player_sequence.remove(target)
         self._log(f"President {self.current_president.name} killed {target.name} ({target.role}).")
-        if target.role == "Hitler":
+        if target.role == Role.HITLER:
             self._end_game(EndCode.LIBERAL_KILLED_HITLER)
         else:
             self._next_round()

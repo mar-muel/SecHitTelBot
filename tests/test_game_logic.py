@@ -2,7 +2,7 @@
 
 import pytest
 from constants.cards import PLAYER_SETS
-from engine import Action, EndCode
+from game_types import Action, EndCode, ExecutivePower, Party, Policy, Role
 import controller
 from conftest import sent_texts
 
@@ -14,12 +14,12 @@ class TestPlayerSets:
 
     @pytest.mark.parametrize("n", PLAYER_SETS.keys())
     def test_exactly_one_hitler(self, n):
-        assert PLAYER_SETS[n].roles.count("Hitler") == 1
+        assert PLAYER_SETS[n].roles.count(Role.HITLER) == 1
 
     @pytest.mark.parametrize("n", PLAYER_SETS.keys())
     def test_only_valid_roles(self, n):
         for role in PLAYER_SETS[n].roles:
-            assert role in ("Liberal", "Fascist", "Hitler")
+            assert role in (Role.LIBERAL, Role.FASCIST, Role.HITLER)
 
     @pytest.mark.parametrize("n", PLAYER_SETS.keys())
     def test_track_length_is_six(self, n):
@@ -27,17 +27,17 @@ class TestPlayerSets:
 
     @pytest.mark.parametrize("n", PLAYER_SETS.keys())
     def test_track_ends_with_win(self, n):
-        assert PLAYER_SETS[n].track[-1] == "win"
+        assert PLAYER_SETS[n].track[-1] == ExecutivePower.WIN
 
     @pytest.mark.parametrize("n", PLAYER_SETS.keys())
     def test_track_only_valid_actions(self, n):
         for action in PLAYER_SETS[n].track:
-            assert action in (None, "policy", "inspect", "choose", "kill", "win")
+            assert isinstance(action, ExecutivePower)
 
     @pytest.mark.parametrize("n", [5, 6, 7, 8, 9, 10])
     def test_liberal_majority(self, n):
         roles = PLAYER_SETS[n].roles
-        assert roles.count("Liberal") > roles.count("Fascist") + 1
+        assert roles.count(Role.LIBERAL) > roles.count(Role.FASCIST) + 1
 
 
 class TestGameSession:
@@ -60,16 +60,16 @@ class TestRoleAssignment:
     def test_correct_role_counts(self, bot, session_any):
         expected = PLAYER_SETS[len(session_any.playerlist)].roles
         actual = [session_any.playerlist[uid].role for uid in session_any.playerlist]
-        for role in ("Liberal", "Fascist", "Hitler"):
+        for role in (Role.LIBERAL, Role.FASCIST, Role.HITLER):
             assert actual.count(role) == expected.count(role)
 
     def test_party_membership_matches_role(self, bot, session_any):
         for uid in session_any.playerlist:
             p = session_any.playerlist[uid]
-            if p.role in ("Fascist", "Hitler"):
-                assert p.party == "fascist"
+            if p.role in (Role.FASCIST, Role.HITLER):
+                assert p.party == Party.FASCIST
             else:
-                assert p.party == "liberal"
+                assert p.party == Party.LIBERAL
 
 
 class TestFascistInformation:
@@ -119,10 +119,16 @@ class TestBoard:
             assert section in text
 
     def test_5p_fascist_track(self, bot, session5):
-        assert session5.engine.board.fascist_track_actions == [None, None, "policy", "kill", "kill", "win"]
+        assert session5.engine.board.fascist_track_actions == [
+            ExecutivePower.NONE, ExecutivePower.NONE, ExecutivePower.POLICY,
+            ExecutivePower.KILL, ExecutivePower.KILL, ExecutivePower.WIN,
+        ]
 
     def test_9p_fascist_track(self, bot, session9):
-        assert session9.engine.board.fascist_track_actions == ["inspect", "inspect", "choose", "kill", "kill", "win"]
+        assert session9.engine.board.fascist_track_actions == [
+            ExecutivePower.INSPECT, ExecutivePower.INSPECT, ExecutivePower.CHOOSE,
+            ExecutivePower.KILL, ExecutivePower.KILL, ExecutivePower.WIN,
+        ]
 
 
 class TestPresentAction:
@@ -232,11 +238,11 @@ class TestEndGame:
         _, ctx = session5.engine.pending_action()
         # Find a liberal policy if possible
         policies = ctx["policies"]
-        fascist_idx = next((i for i, p in enumerate(policies) if p == "fascist"), 0)
+        fascist_idx = next((i for i, p in enumerate(policies) if p == Policy.FASCIST), 0)
         session5.engine.step(policies[fascist_idx])
         _, ctx = session5.engine.pending_action()
         policies = ctx["policies"]
-        liberal_idx = next((i for i, p in enumerate(policies) if p == "liberal"), 0)
+        liberal_idx = next((i for i, p in enumerate(policies) if p == Policy.LIBERAL), 0)
         session5.engine.step(policies[liberal_idx])
         if session5.engine.state.liberal_track == 5:
             assert session5.engine.game_over

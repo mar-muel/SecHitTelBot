@@ -2,6 +2,7 @@ from random import shuffle
 
 from boardgamebox.board import Board
 from boardgamebox.player import Player
+from game_types import Role
 
 
 class Game:
@@ -17,13 +18,13 @@ class Game:
 
     def get_hitler(self):
         for uid in self.playerlist:
-            if self.playerlist[uid].role == "Hitler":
+            if self.playerlist[uid].role == Role.HITLER:
                 return self.playerlist[uid]
 
     def get_fascists(self):
         fascists = []
         for uid in self.playerlist:
-            if self.playerlist[uid].role == "Fascist":
+            if self.playerlist[uid].role == Role.FASCIST:
                 fascists.append(self.playerlist[uid])
         return fascists
 
