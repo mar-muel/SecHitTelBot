@@ -335,6 +335,7 @@ class GameEngine:
             self._next_round()
 
     def _do_inspect(self, target: Player) -> None:
+        self.state.inspected_players.append(target)
         self._log(f"President {self.current_president.name} inspected {target.name}: {target.party}.")
         self._next_round()
 

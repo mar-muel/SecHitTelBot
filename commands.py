@@ -93,31 +93,8 @@ async def command_ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def command_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     assert update.message is not None
     cid = update.message.chat_id
-    s = stats.get()
-    lib_pol = s.get('libwin_policies', 0)
-    lib_kill = s.get('libwin_kill', 0)
-    fasc_pol = s.get('fascwin_policies', 0)
-    fasc_hit = s.get('fascwin_hitler', 0)
-    cancelled = s.get('cancelled', 0)
-    total = lib_pol + lib_kill + fasc_pol + fasc_hit
-
-    def pct(n):
-        return f"{n / total * 100:.0f}%" if total else "-"
-
-    stattext = (
-        "📊 Statistics\n"
-        "─────────────────\n"
-        f"Games played: {total}\n"
-        f"Games cancelled: {cancelled}\n\n"
-        f"🕊 Liberal wins: {lib_pol + lib_kill} ({pct(lib_pol + lib_kill)})\n"
-        f"  Policies enacted: {lib_pol}\n"
-        f"  Hitler killed: {lib_kill}\n\n"
-        f"💀 Fascist wins: {fasc_pol + fasc_hit} ({pct(fasc_pol + fasc_hit)})\n"
-        f"  Policies enacted: {fasc_pol}\n"
-        f"  Hitler chancellor: {fasc_hit}\n\n"
-        f"Groups: {len(s.get('groups', []))} | Running now: {len(controller.games)}"
-    )
-    await context.bot.send_message(cid, stattext)
+    text = stats.format_stats(cid)
+    await context.bot.send_message(cid, text, parse_mode=constants.ParseMode.MARKDOWN)
 
 
 # help page

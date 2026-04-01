@@ -812,6 +812,7 @@ async def end_game(bot, session, cancelled=False):
         result_text, stat_key = results[code]
         await bot.send_message(session.cid, f"Game over! {result_text}\n\n{roles_text}")
         s[stat_key] += 1
+        stats.record_player_stats(session)
         await maybe_narrate(bot, session, "game_over", {
             "result": result_text,
             "liberal_track": session.engine.state.liberal_track,
