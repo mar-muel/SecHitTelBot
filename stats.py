@@ -88,19 +88,20 @@ def format_stats(cid: int) -> str:
         return f"{n / total * 100:.0f}%" if total else "-"
 
     text = (
-        "📊 Statistics\n"
+        "```\n"
+        "📊 Stats\n"
         "─────────────────\n"
         f"Games played: {total}\n\n"
         f"🕊 Liberal wins: {lib_pol + lib_kill} ({pct(lib_pol + lib_kill)})\n"
-        f"  Policies enacted: {lib_pol}\n"
-        f"  Hitler killed: {lib_kill}\n\n"
+        f" - By policy: {lib_pol}\n"
+        f" - By killing Hitler: {lib_kill}\n\n"
         f"💀 Fascist wins: {fasc_pol + fasc_hit} ({pct(fasc_pol + fasc_hit)})\n"
-        f"  Policies enacted: {fasc_pol}\n"
-        f"  Hitler chancellor: {fasc_hit}"
+        f" - By policy: {fasc_pol}\n"
+        f" - By electing Hitler: {fasc_hit}"
     )
     channel = _data.get("player_stats", {}).get(str(cid), {})
     if not channel:
-        text += "\n\n🏆 Leaderboard\n─────────────────\nNo games played yet."
+        text += "\n\n🏆 Leaderboard\n─────────────────\nNo games played yet.\n```"
         return text
 
     entries = sorted(
@@ -110,11 +111,11 @@ def format_stats(cid: int) -> str:
     )
 
     name_w = max(len(e["name"]) for e in entries)
-    text += "\n\n🏆 Leaderboard\n```\n"
+    text += "\n\n🏆 Leaderboard\n─────────────────\n"
     for i, e in enumerate(entries, 1):
         win_pct = f"{e['wins'] / e['games'] * 100:.0f}%" if e["games"] else " -"
         name = e["name"].ljust(name_w)
-        text += f"{i}. {name}  {e['games']:>2}G  {win_pct:>3} win"
+        text += f"{str(i).rjust(2)}. {name}  {e['games']:>2}G  {win_pct:>3} win"
         extras = []
         if e["eliminated"]:
             extras.append(f"🗡{e['eliminated']}")
@@ -124,10 +125,9 @@ def format_stats(cid: int) -> str:
             text += f"  {' '.join(extras)}"
         text += "\n"
     text += f"\nRoles played (L/F/H):\n"
-    role_parts = []
     for e in entries:
-        role_parts.append(f"{e['name']} {e['played_liberal']}/{e['played_fascist']}/{e['played_hitler']}")
-    text += "  ".join(role_parts)
+        name = e["name"].ljust(name_w)
+        text += f"- {name} {e['played_liberal']}/{e['played_fascist']}/{e['played_hitler']}\n"
     text += "\n```"
 
     return text
