@@ -5,5 +5,4 @@ repos:
         name: pyright
         entry: uv run pyright
         language: system
-        pass_filenames: false
         types: [python]
