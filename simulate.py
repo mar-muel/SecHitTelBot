@@ -31,6 +31,12 @@ class LoyalStrategy(BaseModel):
     roles: set[Role] = {Role.LIBERAL, Role.FASCIST, Role.HITLER}
 
 
+class LoyalVotingStrategy(BaseModel):
+    name: Literal["loyal_voting"] = "loyal_voting"
+    description: str = "Random decisions except loyal voting"
+    roles: set[Role] = {Role.LIBERAL, Role.FASCIST, Role.HITLER}
+
+
 class BayesianLiberalStrategy(BaseModel):
     name: Literal["bayesian"] = "bayesian"
     description: str = "Trust tracking, vote/nominate/kill by trust"
@@ -52,13 +58,14 @@ class HitlerStealthStrategy(BaseModel):
 
 
 Strategy = Annotated[
-    RandomStrategy | LoyalStrategy | BayesianLiberalStrategy | GreedyFascistStrategy | HitlerStealthStrategy,
+    RandomStrategy | LoyalStrategy | LoyalVotingStrategy | BayesianLiberalStrategy | GreedyFascistStrategy | HitlerStealthStrategy,
     Field(discriminator="name"),
 ]
 
 STRATEGY_MAP: dict[str, type[BaseModel]] = {
     "random": RandomStrategy,
     "loyal": LoyalStrategy,
+    "loyal_voting": LoyalVotingStrategy,
     "bayesian": BayesianLiberalStrategy,
     "greedy_fascist": GreedyFascistStrategy,
     "hitler_stealth": HitlerStealthStrategy,
@@ -159,6 +166,8 @@ def decide(obs: ObservableState, strategy: Strategy) -> object:
             return _random_decide(obs)
         case LoyalStrategy():
             return _loyal_decide(obs)
+        case LoyalVotingStrategy():
+            return _random_decide(obs)
         case BayesianLiberalStrategy():
             return _bayesian_decide(obs, strategy)
         case GreedyFascistStrategy():
@@ -172,6 +181,8 @@ def decide_vote(obs: ObservableState, strategy: Strategy) -> bool:
         case RandomStrategy():
             return random.choice([True, False])
         case LoyalStrategy():
+            return _loyal_vote(obs)
+        case LoyalVotingStrategy():
             return _loyal_vote(obs)
         case BayesianLiberalStrategy():
             return random.choice([True, False])
@@ -212,101 +223,112 @@ def _random_decide(obs: ObservableState) -> object:
 # Loyal strategy (loyal policies, voting, and executive actions)
 # ---------------------------------------------------------------------------
 
-def _loyal_known_fascists(obs: ObservableState) -> set[int]:
-    known = set(obs.known_fascists)
-    if obs.known_hitler is not None:
-        known.add(obs.known_hitler)
-    for uid, party in obs.inspected.items():
-        if party == Party.FASCIST:
-            known.add(uid)
-    return known
+def _loyal_known_teammates(obs: ObservableState) -> set[int]:
+    """UIDs this player knows are on their team (from role reveal + inspections)."""
+    match obs.my_role:
+        case Role.FASCIST:
+            team = set(obs.known_fascists)
+            if obs.known_hitler is not None:
+                team.add(obs.known_hitler)
+            team |= {uid for uid, p in obs.inspected.items() if p == Party.FASCIST}
+            return team
+        case Role.HITLER:
+            team = set(obs.known_fascists)
+            team |= {uid for uid, p in obs.inspected.items() if p == Party.FASCIST}
+            return team
+        case Role.LIBERAL:
+            return {uid for uid, p in obs.inspected.items() if p == Party.LIBERAL}
+
+
+def _loyal_known_enemies(obs: ObservableState) -> set[int]:
+    """UIDs this player knows are on the opposing team (from role reveal + inspections)."""
+    match obs.my_role:
+        case Role.FASCIST | Role.HITLER:
+            return {uid for uid, p in obs.inspected.items() if p == Party.LIBERAL}
+        case Role.LIBERAL:
+            enemies = set(obs.known_fascists)
+            if obs.known_hitler is not None:
+                enemies.add(obs.known_hitler)
+            enemies |= {uid for uid, p in obs.inspected.items() if p == Party.FASCIST}
+            return enemies
 
 
 def _loyal_vote(obs: ObservableState) -> bool:
-    ctx = obs.context
-    chancellor_uid = ctx["chancellor"].uid
-    teammates = _loyal_known_fascists(obs)
-    if obs.my_role == Role.FASCIST:
-        return chancellor_uid in teammates
-    elif obs.my_role == Role.HITLER:
-        if teammates:
-            return chancellor_uid in teammates
-        inspected_party = obs.inspected.get(chancellor_uid)
-        if inspected_party == Party.FASCIST:
-            return True
-        if inspected_party == Party.LIBERAL:
-            return False
-        return random.choice([True, False])
-    else:
-        if obs.inspected.get(chancellor_uid) == Party.FASCIST:
-            return False
-        return random.choice([True, False])
+    chancellor_uid = obs.context["chancellor"].uid
+    teammates = _loyal_known_teammates(obs)
+    enemies = _loyal_known_enemies(obs)
+    if chancellor_uid in teammates:
+        return True
+    if chancellor_uid in enemies:
+        return False
+    return random.choice([True, False])
 
 
 def _loyal_decide(obs: ObservableState) -> object:
     ctx = obs.context
     is_fascist_team = obs.my_role in (Role.FASCIST, Role.HITLER)
     preferred = Policy.FASCIST if is_fascist_team else Policy.LIBERAL
-    teammates = _loyal_known_fascists(obs) if is_fascist_team else set()
-    known_bad = _loyal_known_fascists(obs) if not is_fascist_team else set()
+    teammates = _loyal_known_teammates(obs)
+    enemies = _loyal_known_enemies(obs)
 
     match obs.action:
         case Action.NOMINATE_CHANCELLOR:
             eligible = ctx["eligible"]
             if is_fascist_team:
+                # after 3 fascist policies, nominate Hitler to win instantly
                 if obs.fascist_track >= 3 and obs.known_hitler is not None:
                     hitler = [p for p in eligible if p.uid == obs.known_hitler]
                     if hitler:
                         return hitler[0]
+                # prefer known teammates as chancellor
                 friends = [p for p in eligible if p.uid in teammates]
                 if friends:
                     return random.choice(friends)
             else:
-                safe = [p for p in eligible if p.uid not in known_bad]
+                # avoid nominating known fascists
+                safe = [p for p in eligible if p.uid not in enemies]
                 if safe:
                     return random.choice(safe)
             return random.choice(eligible)
         case Action.PRESIDENT_DISCARD:
+            # discard a policy we don't want
             policies = ctx["policies"]
             dislike = [p for p in policies if p != preferred]
             return random.choice(dislike) if dislike else random.choice(policies)
         case Action.CHANCELLOR_ENACT:
+            # enact a policy we want
             policies = ctx["policies"]
             liked = [p for p in policies if p == preferred]
             return random.choice(liked) if liked else random.choice(policies)
         case Action.EXECUTIVE_KILL:
             choices = ctx["choices"]
-            if is_fascist_team:
-                enemies = [p for p in choices if p.uid not in teammates]
-                if enemies:
-                    return random.choice(enemies)
-            else:
-                suspects = [p for p in choices if p.uid in known_bad]
-                if suspects:
-                    return random.choice(suspects)
+            # liberals prioritize killing Hitler if known
+            if not is_fascist_team and obs.known_hitler is not None:
+                hitler = [p for p in choices if p.uid == obs.known_hitler]
+                if hitler:
+                    return hitler[0]
+            # otherwise kill a known enemy
+            targets = [p for p in choices if p.uid in enemies]
+            if targets:
+                return random.choice(targets)
             return random.choice(choices)
         case Action.EXECUTIVE_INSPECT:
+            # inspect someone we don't already know about (skip teammates)
             choices = ctx["choices"]
             already = set(obs.inspected.keys())
-            if is_fascist_team:
-                enemies = [p for p in choices if p.uid not in teammates and p.uid not in already]
-                if enemies:
-                    return random.choice(enemies)
-            else:
-                unknown = [p for p in choices if p.uid not in already]
-                if unknown:
-                    return random.choice(unknown)
+            unknown = [p for p in choices if p.uid not in already and p.uid not in teammates]
+            if unknown:
+                return random.choice(unknown)
             return random.choice(choices)
         case Action.EXECUTIVE_SPECIAL_ELECTION:
+            # prefer teammates, then anyone who isn't a known enemy
             eligible = ctx["choices"]
-            if is_fascist_team:
-                friends = [p for p in eligible if p.uid in teammates]
-                if friends:
-                    return random.choice(friends)
-            else:
-                safe = [p for p in eligible if p.uid not in known_bad]
-                if safe:
-                    return random.choice(safe)
+            friends = [p for p in eligible if p.uid in teammates]
+            if friends:
+                return random.choice(friends)
+            safe = [p for p in eligible if p.uid not in enemies]
+            if safe:
+                return random.choice(safe)
             return random.choice(eligible)
         case _:
             return _random_decide(obs)

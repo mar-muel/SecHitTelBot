@@ -9,6 +9,7 @@ import matplotlib.ticker as mtick
 from simulate import (
     GameResult,
     LoyalStrategy,
+    LoyalVotingStrategy,
     RandomStrategy,
     SimConfig,
     Strategy,
@@ -118,6 +119,7 @@ def main() -> None:
         case "win_rates_by_players":
             strategies: dict[str, tuple[Strategy, Strategy, Strategy]] = {
                 "random": (RandomStrategy(), RandomStrategy(), RandomStrategy()),
+                "loyal_voting": (LoyalVotingStrategy(), LoyalVotingStrategy(), LoyalVotingStrategy()),
                 "loyal": (LoyalStrategy(), LoyalStrategy(), LoyalStrategy()),
             }
             print(f"Running {args.runs} games per player count...")
