@@ -29,8 +29,15 @@ class RandomStrategy(BaseModel):
 
 class LoyalStrategy(BaseModel):
     name: Literal["loyal"] = "loyal"
-    description: str = "Play for own team: policies, votes, nominations, kills"
     roles: set[Role] = {Role.LIBERAL, Role.FASCIST, Role.HITLER}
+    deception: float = 0.0
+    deception_decay: float = 0.0
+
+    @property
+    def description(self) -> str:
+        if self.deception == 0:
+            return "Play for own team: policies, votes, nominations, kills"
+        return f"Loyal with {self.deception:.0%} deception (decay {self.deception_decay:.2f}/gov)"
 
 
 class LoyalVotingStrategy(BaseModel):
@@ -41,8 +48,15 @@ class LoyalVotingStrategy(BaseModel):
 
 class BayesianStrategy(BaseModel):
     name: Literal["bayesian"] = "bayesian"
-    description: str = "Bayesian trust tracking purely from policy outcomes"
     roles: set[Role] = {Role.LIBERAL, Role.HITLER}
+    deception: float = 0.0
+    deception_decay: float = 0.0
+
+    @property
+    def description(self) -> str:
+        if self.deception == 0:
+            return "Bayesian trust tracking purely from policy outcomes"
+        return f"Bayesian trust + Hitler deception: {self.deception:.0%} liberal play, decay {self.deception_decay:.2f}/gov"
 
 
 Strategy = Annotated[
@@ -232,6 +246,7 @@ class PlayerAgent:
     p_fascist: dict[int, float] = field(default_factory=dict)
     inspected: dict[int, Party] = field(default_factory=dict)
     beliefs: BayesianBeliefs | None = None
+    gov_count: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -255,6 +270,7 @@ class ObservableState:
     known_hitler: int | None
     p_fascist: dict[int, float]
     inspected: dict[int, Party]
+    gov_count: int
 
 
 def build_observable(engine: GameEngine, agent: PlayerAgent, action: Action, context: dict) -> ObservableState:
@@ -274,6 +290,7 @@ def build_observable(engine: GameEngine, agent: PlayerAgent, action: Action, con
         known_hitler=agent.known_hitler,
         p_fascist=dict(agent.p_fascist),
         inspected=dict(agent.inspected),
+        gov_count=agent.gov_count,
     )
 
 
@@ -286,7 +303,7 @@ def decide(obs: ObservableState, strategy: Strategy) -> object:
         case RandomStrategy():
             return _random_decide(obs)
         case LoyalStrategy():
-            return _loyal_decide(obs)
+            return _loyal_decide(obs, strategy)
         case LoyalVotingStrategy():
             if obs.action == Action.VOTE:
                 return _loyal_vote(obs)
@@ -387,19 +404,33 @@ def _loyal_vote(obs: ObservableState) -> bool:
     return random.choice([True, False])
 
 
-def _loyal_decide(obs: ObservableState) -> object:
+def _loyal_decide(obs: ObservableState, strategy: LoyalStrategy) -> object:
     ctx = obs.context
     is_fascist_team = obs.my_role in (Role.FASCIST, Role.HITLER)
-    preferred = Policy.FASCIST if is_fascist_team else Policy.LIBERAL
+    # Deception: fascists may play liberal to build trust, decaying with gov participation
+    deceiving = False
+    if is_fascist_team and strategy.deception > 0:
+        rate = max(0.0, strategy.deception - strategy.deception_decay * obs.gov_count)
+        deceiving = random.random() < rate
+    # When deceiving, act like a liberal in every action
+    acting_fascist = is_fascist_team and not deceiving
+    preferred = Policy.FASCIST if acting_fascist else Policy.LIBERAL
     teammates = _loyal_known_teammates(obs)
     enemies = _loyal_known_enemies(obs)
+    if deceiving:
+        teammates, enemies = enemies, teammates
 
     match obs.action:
         case Action.VOTE:
-            return _loyal_vote(obs)
+            chancellor_uid = ctx["chancellor"].uid
+            if chancellor_uid in teammates:
+                return True
+            if chancellor_uid in enemies:
+                return False
+            return random.choice([True, False])
         case Action.NOMINATE_CHANCELLOR:
             eligible = ctx["eligible"]
-            if is_fascist_team:
+            if acting_fascist:
                 # after 3 fascist policies, nominate Hitler to win instantly
                 if obs.fascist_track >= 3 and obs.known_hitler is not None:
                     hitler = [p for p in eligible if p.uid == obs.known_hitler]
@@ -410,7 +441,7 @@ def _loyal_decide(obs: ObservableState) -> object:
                 if friends:
                     return random.choice(friends)
             else:
-                # avoid nominating known fascists
+                # avoid nominating known fascists/enemies
                 safe = [p for p in eligible if p.uid not in enemies]
                 if safe:
                     return random.choice(safe)
@@ -426,12 +457,12 @@ def _loyal_decide(obs: ObservableState) -> object:
             liked = [p for p in policies if p == preferred]
             return random.choice(liked) if liked else random.choice(policies)
         case Action.VETO_CHOICE:
-            # Accept veto as liberal (fascists are unlikely to veto)
-            return obs.my_role == Role.LIBERAL
+            # Accept veto as liberal (fascists refuse to waste policies)
+            return not acting_fascist
         case Action.EXECUTIVE_KILL:
             choices = ctx["choices"]
-            # liberals prioritize killing Hitler if known
-            if not is_fascist_team and obs.known_hitler is not None:
+            # prioritize killing Hitler if known
+            if not acting_fascist and obs.known_hitler is not None:
                 hitler = [p for p in choices if p.uid == obs.known_hitler]
                 if hitler:
                     return hitler[0]
@@ -470,6 +501,12 @@ def _bayesian_decide(obs: ObservableState, strategy: BayesianStrategy) -> object
     ctx = obs.context
     pf = obs.p_fascist
     is_hitler = obs.my_role == Role.HITLER
+    deceiving = False
+    if is_hitler and strategy.deception > 0:
+        rate = max(0.0, strategy.deception - strategy.deception_decay * obs.gov_count)
+        deceiving = random.random() < rate
+    # When deceiving, Hitler acts like a liberal in all decisions
+    acting_fascist = is_hitler and not deceiving
 
     match obs.action:
         case Action.VOTE:
@@ -485,39 +522,40 @@ def _bayesian_decide(obs: ObservableState, strategy: BayesianStrategy) -> object
                 return True
             pop_avg = sum(pf[u] for u in others) / len(others)
             # Use small epsilon to avoid floating point ties defaulting to Nein
-            if is_hitler:
+            if acting_fascist:
                 return gov_avg >= pop_avg - 1e-9
             return gov_avg <= pop_avg + 1e-9
         case Action.NOMINATE_CHANCELLOR:
+            # Acting fascist: pick most suspicious (likely fascist teammate)
+            # Acting liberal: pick least suspicious (most trusted)
             eligible = ctx["eligible"]
-            # Hitler picks most suspicious (likely fascist teammate)
-            if is_hitler:
+            if acting_fascist:
                 return max(eligible, key=lambda p: pf[p.uid])
-            # Liberal picks least suspicious
             return min(eligible, key=lambda p: pf[p.uid])
         case Action.PRESIDENT_DISCARD:
             # Always play loyally for own team
             policies = ctx["policies"]
-            preferred = Policy.FASCIST if is_hitler else Policy.LIBERAL
+            preferred = Policy.FASCIST if acting_fascist else Policy.LIBERAL
             dislike = [p for p in policies if p != preferred]
             return random.choice(dislike) if dislike else random.choice(policies)
         case Action.CHANCELLOR_ENACT:
             policies = ctx["policies"]
-            preferred = Policy.FASCIST if is_hitler else Policy.LIBERAL
+            preferred = Policy.FASCIST if acting_fascist else Policy.LIBERAL
             liked = [p for p in policies if p == preferred]
             return random.choice(liked) if liked else random.choice(policies)
         case Action.VETO_CHOICE:
-            # Accept veto as liberal (fascists are unlikely to veto)
-            return obs.my_role == Role.LIBERAL
+            # Accept veto as liberal (fascists refuse to waste policies)
+            return not acting_fascist
         case Action.EXECUTIVE_KILL:
             choices = ctx["choices"]
-            # Liberal: kill known Hitler first if possible
-            if not is_hitler and obs.known_hitler is not None:
+            # Kill known Hitler first if acting liberal
+            if not acting_fascist and obs.known_hitler is not None:
                 hitler = [p for p in choices if p.uid == obs.known_hitler]
                 if hitler:
                     return hitler[0]
-            # Hitler kills least suspicious (likely liberal), liberal kills most suspicious
-            if is_hitler:
+            # Acting fascist: kill least suspicious (likely liberal)
+            # Acting liberal: kill most suspicious (likely fascist)
+            if acting_fascist:
                 return min(choices, key=lambda p: pf[p.uid])
             return max(choices, key=lambda p: pf[p.uid])
         case Action.EXECUTIVE_INSPECT:
@@ -529,9 +567,10 @@ def _bayesian_decide(obs: ObservableState, strategy: BayesianStrategy) -> object
                 return min(unknown, key=lambda p: abs(pf[p.uid] - 0.5))
             return random.choice(choices)
         case Action.EXECUTIVE_SPECIAL_ELECTION:
-            # Hitler picks most suspicious (likely teammate), liberal picks least suspicious
+            # Acting fascist: pick most suspicious (likely teammate)
+            # Acting liberal: pick least suspicious (most trusted)
             choices = ctx["choices"]
-            if is_hitler:
+            if acting_fascist:
                 return max(choices, key=lambda p: pf[p.uid])
             return min(choices, key=lambda p: pf[p.uid])
         case _ as unreachable:
@@ -624,6 +663,8 @@ def run_game(config: SimConfig, game_seed: int | None = None) -> GameResult:
                 engine.step(votes)
                 if engine.state.president is not None and engine.state.president.uid == pres_uid:
                     pending_gov = GovernmentRecord(president_uid=pres_uid, chancellor_uid=chan_uid, votes=votes)
+                    agents[pres_uid].gov_count += 1
+                    agents[chan_uid].gov_count += 1
                     pres_fas = agents[pres_uid].role in (Role.FASCIST, Role.HITLER)
                     chan_fas = agents[chan_uid].role in (Role.FASCIST, Role.HITLER)
                     if pres_fas and chan_fas:
