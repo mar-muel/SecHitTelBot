@@ -17,6 +17,7 @@ dev = [
 ]
 sim = [
     "matplotlib>=3.9",
+    "openai>=1.0",
     "pydantic>=2.0",
 ]
 

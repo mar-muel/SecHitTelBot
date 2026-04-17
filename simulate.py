@@ -6,7 +6,7 @@ import os
 import random
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from math import comb, exp, log
 from typing import Annotated, Literal, assert_never
 
@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from constants.cards import PLAYER_SETS
 from engine import GameEngine
 from game_types import Action, EndCode, Party, Policy, Role
+from llm_strategy import LLMStrategy, llm_call_log, llm_decide
 
 
 # ---------------------------------------------------------------------------
@@ -60,7 +61,7 @@ class BayesianStrategy(BaseModel):
 
 
 Strategy = Annotated[
-    RandomStrategy | LoyalStrategy | LoyalVotingStrategy | BayesianStrategy,
+    RandomStrategy | LoyalStrategy | LoyalVotingStrategy | BayesianStrategy | LLMStrategy,
     Field(discriminator="name"),
 ]
 
@@ -69,6 +70,7 @@ STRATEGY_MAP: dict[str, type[BaseModel]] = {
     "loyal": LoyalStrategy,
     "loyal_voting": LoyalVotingStrategy,
     "bayesian": BayesianStrategy,
+    "llm": LLMStrategy,
 }
 
 
@@ -225,6 +227,7 @@ class GameResult(BaseModel):
     elapsed_s: float
     roles: dict[str, str]
     log: list[str] | None = None
+    llm_log: list[dict] | None = None
     anarchies: int = 0
     govs_ll: int = 0
     govs_lf: int = 0
@@ -271,6 +274,9 @@ class ObservableState:
     p_fascist: dict[int, float]
     inspected: dict[int, Party]
     gov_count: int
+    my_name: str = ""
+    player_names: dict[int, str] = field(default_factory=dict)
+    board_text: str = ""
 
 
 def build_observable(engine: GameEngine, agent: PlayerAgent, action: Action, context: dict) -> ObservableState:
@@ -291,6 +297,9 @@ def build_observable(engine: GameEngine, agent: PlayerAgent, action: Action, con
         p_fascist=dict(agent.p_fascist),
         inspected=dict(agent.inspected),
         gov_count=agent.gov_count,
+        my_name=engine.players[agent.uid].name,
+        player_names={uid: p.name for uid, p in engine.players.items()},
+        board_text=engine.board.print_board(),
     )
 
 
@@ -310,6 +319,8 @@ def decide(obs: ObservableState, strategy: Strategy) -> object:
             return _random_decide(obs)
         case BayesianStrategy():
             return _bayesian_decide(obs, strategy)
+        case LLMStrategy():
+            return llm_decide(obs, strategy)
         case _ as unreachable:
             assert_never(unreachable)
 
@@ -637,6 +648,7 @@ def _build_agents(engine: GameEngine, config: SimConfig) -> dict[int, PlayerAgen
 
 def run_game(config: SimConfig, game_seed: int | None = None) -> GameResult:
     t0 = time.perf_counter()
+    llm_call_log.clear()
     engine = GameEngine(num_players=config.num_players, seed=game_seed)
     agents = _build_agents(engine, config)
 
@@ -724,6 +736,7 @@ def run_game(config: SimConfig, game_seed: int | None = None) -> GameResult:
         elapsed_s=elapsed,
         roles={name: role.value for name, role in summary["roles"].items()},
         log=engine.log if config.save_logs else None,
+        llm_log=[asdict(r) for r in llm_call_log] if config.save_logs and llm_call_log else None,
         anarchies=anarchies,
         govs_ll=govs_ll,
         govs_lf=govs_lf,
@@ -776,6 +789,22 @@ def print_summary(results: list[GameResult], config: SimConfig) -> None:
     total_time = sum(r.elapsed_s for r in results)
     print(f"\nAvg rounds per game: {total_rounds/n:.1f}")
     print(f"Total time: {total_time:.3f}s ({total_time/n*1000:.2f}ms/game)")
+
+    total_prompt = 0
+    total_completion = 0
+    total_calls = 0
+    for r in results:
+        if r.llm_log:
+            for call in r.llm_log:
+                total_prompt += call.get("prompt_tokens", 0)
+                total_completion += call.get("completion_tokens", 0)
+                total_calls += 1
+    if total_calls > 0:
+        total_tokens = total_prompt + total_completion
+        cost_estimate = total_prompt / 1_000_000 * 0.15 + total_completion / 1_000_000 * 0.60
+        print(f"\nLLM calls: {total_calls} ({total_calls/n:.0f}/game)")
+        print(f"Tokens: {total_prompt:,} in + {total_completion:,} out = {total_tokens:,} total")
+        print(f"Estimated cost: ${cost_estimate:.4f} (at gpt-4o-mini rates)")
     print()
 
 

@@ -8,3 +8,6 @@ class Player:
         self.role: Role | None = None
         self.party: Party | None = None
         self.is_dead = False
+
+    def __str__(self) -> str:
+        return f"{self.name} (uid={self.uid})"
