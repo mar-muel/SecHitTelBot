@@ -40,6 +40,12 @@ FEATURES: list[Feature] = [
                     "Min 3 real votes required for a valid election.",
     ),
     Feature(
+        key="nomination_timeout",
+        name="Nomination Timeout",
+        description="Presidents who don't nominate a Chancellor within 24h are skipped. "
+                    "This does not count as a failed election.",
+    ),
+    Feature(
         key="ai_narration",
         name="AI Narration",
         description="An AI narrator adds dramatic flair to game events, "
@@ -57,6 +63,9 @@ VOTE_TIMEOUT_SECONDS = 24 * 60 * 60
 VOTE_REMINDER_SECONDS = 23 * 60 * 60
 MIN_REAL_VOTES = 3
 
+NOMINATION_TIMEOUT_SECONDS = 60
+NOMINATION_REMINDER_SECONDS = 30
+
 _job_queue: JobQueue | None = None
 
 
@@ -68,8 +77,11 @@ class GameConfig:
     })
 
     def __getattr__(self, name: str) -> bool:
-        if name in self.__dict__.get("features", {}):
-            return self.features[name].enabled
+        features = self.__dict__.get("features", {})
+        if name in features:
+            return features[name].enabled
+        if any(f.key == name for f in FEATURES):
+            return False
         raise AttributeError(name)
 
     def toggle(self, key: str):
@@ -91,6 +103,9 @@ class GameSession:
         self.config = GameConfig()
         self.vote_timeout_job_name: str | None = None
         self.vote_reminder_job_name: str | None = None
+        self.nomination_timeout_job_name: str | None = None
+        self.nomination_reminder_job_name: str | None = None
+        self.dateinitnomination: datetime.datetime | None = None
         self.narrator: GameNarrator = GameNarrator()
 
     @property
@@ -282,6 +297,63 @@ async def _vote_timeout_callback(context):
     await finish_voting(context.bot, session)
 
 
+def _cancel_nomination_jobs(session: GameSession):
+    if _job_queue is None:
+        return
+    for name in (session.nomination_timeout_job_name, session.nomination_reminder_job_name):
+        if name:
+            for job in _job_queue.get_jobs_by_name(name):
+                job.schedule_removal()
+    session.nomination_timeout_job_name = None
+    session.nomination_reminder_job_name = None
+
+
+def _schedule_nomination_jobs(session: GameSession):
+    if _job_queue is None:
+        return
+    _cancel_nomination_jobs(session)
+    cid = session.cid
+    data = {"cid": cid}
+    _job_queue.run_once(_nomination_reminder_callback, when=NOMINATION_REMINDER_SECONDS,
+                        name=f"nomination_reminder_{cid}", data=data)
+    _job_queue.run_once(_nomination_timeout_callback, when=NOMINATION_TIMEOUT_SECONDS,
+                        name=f"nomination_timeout_{cid}", data=data)
+    session.nomination_reminder_job_name = f"nomination_reminder_{cid}"
+    session.nomination_timeout_job_name = f"nomination_timeout_{cid}"
+
+
+async def _nomination_reminder_callback(context):
+    cid = context.job.data["cid"]
+    session = games.get(cid)
+    if not session or not session.engine:
+        return
+    pending = session.engine.pending_action()
+    if pending is None or pending[0] != Action.NOMINATE_CHANCELLOR:
+        return
+    president = pending[1]["president"]
+    remaining = NOMINATION_TIMEOUT_SECONDS - NOMINATION_REMINDER_SECONDS
+    mins = remaining // 60
+    time_left = (f"{mins} minute{'s' if mins != 1 else ''}" if remaining < 3600
+                 else f"{remaining // 3600} hour{'s' if remaining >= 7200 else ''}")
+    await context.bot.send_message(president.uid,
+        f"Reminder: You have {time_left} left to nominate a Chancellor! "
+        f"If you don't, your turn will be skipped.")
+
+
+async def _nomination_timeout_callback(context):
+    cid = context.job.data["cid"]
+    session = games.get(cid)
+    if not session or not session.engine:
+        return
+    pending = session.engine.pending_action()
+    if pending is None or pending[0] != Action.NOMINATE_CHANCELLOR:
+        return
+    session.dateinitnomination = None
+    session.engine.skip_nomination()
+    await send_engine_messages(context.bot, session)
+    await present_action(context.bot, session)
+
+
 async def present_action(bot, session: GameSession):
     """Map the engine's current pending action to Telegram inline keyboards."""
     assert session.engine is not None
@@ -304,6 +376,9 @@ async def present_action(bot, session: GameSession):
             markup = InlineKeyboardMarkup(btns)
             await bot.send_message(president.uid, session.engine.board.print_board())
             await bot.send_message(president.uid, 'Please nominate your chancellor!', reply_markup=markup)
+            if session.config.nomination_timeout:
+                session.dateinitnomination = datetime.datetime.now()
+                _schedule_nomination_jobs(session)
 
         case Action.VOTE:
             session.pending_votes = {}
@@ -431,6 +506,8 @@ async def nominate_chosen_chancellor(update: Update, context: ContextTypes.DEFAU
     try:
         session = games[cid]
         assert session.engine is not None
+        _cancel_nomination_jobs(session)
+        session.dateinitnomination = None
         chosen = session.engine.players[chosen_uid]
         assert session.engine.state.nominated_president is not None
         pres_name = session.engine.state.nominated_president.name
@@ -802,6 +879,7 @@ async def end_game(bot, session, cancelled=False):
     stats.save()
 
     _cancel_vote_jobs(session)
+    _cancel_nomination_jobs(session)
     if session.cid in games:
         del games[session.cid]
 

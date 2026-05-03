@@ -97,6 +97,21 @@ class GameEngine:
         """Returns (Action, context_dict) describing what decision is needed next."""
         return self._pending
 
+    def skip_nomination(self) -> None:
+        """Skip current nomination, advance to next president. No failed election."""
+        if self._pending is None or self._pending[0] != Action.NOMINATE_CHANCELLOR:
+            raise ValueError("Can only skip when NOMINATE_CHANCELLOR is pending")
+        president = self.state.nominated_president
+        assert president is not None
+        self.messages.append(EngineMessage(
+            f"⏰ {president.name} did not nominate a Chancellor in time. "
+            f"The presidency passes to the next player."
+        ))
+        self._log(f"Nomination skipped for {president.name}.")
+        self.state.nominated_president = None
+        self._increment_player_counter()
+        self._advance_to_nomination()
+
     def step(self, choice) -> None:
         """Provide the decision for the current pending action."""
         if self.game_over or self._pending is None:

@@ -234,7 +234,17 @@ async def command_votes(update: Update, context: ContextTypes.DEFAULT_TYPE):
             session = controller.games[cid]
             if not session.dateinitvote:
                 # If dateinitvote is null, then the voting didn't start
-                await context.bot.send_message(cid, "The voting didn't start yet.")
+                if session.dateinitnomination:
+                    _, ctx = session.engine.pending_action()  # type: ignore[misc]
+                    president = ctx["president"]
+                    text = f"Waiting on {president.name} to nominate a Chancellor."
+                    elapsed = (datetime.datetime.now() - session.dateinitnomination).total_seconds()
+                    remaining = controller.NOMINATION_TIMEOUT_SECONDS - elapsed
+                    hours, minutes = int(remaining // 3600), int((remaining % 3600) // 60)
+                    text += f"\nTime remaining: {hours}h {minutes}m"
+                    await context.bot.send_message(cid, text)
+                else:
+                    await context.bot.send_message(cid, "The voting didn't start yet.")
             else:
                 start = session.dateinitvote
                 stop = datetime.datetime.now()
