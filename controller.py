@@ -14,7 +14,7 @@ import stats
 from boardgamebox.game import Game
 from constants.cards import PLAYER_SETS
 from engine import GameEngine
-from game_types import Action, EndCode, ExecutivePower, Role
+from game_types import Action, EndCode, Role
 from narrator import GameNarrator
 
 import datetime
@@ -140,6 +140,15 @@ async def maybe_narrate(bot, session: GameSession, event: str, narr_ctx: dict):
     narrated = await session.narrator.narrate(event, narr_ctx)
     if narrated:
         await bot.send_message(session.cid, f"📖 {narrated}")
+
+
+async def send_engine_messages(bot, session: GameSession):
+    """Drain and send any messages queued by the engine."""
+    assert session.engine is not None
+    while session.engine.messages:
+        msg = session.engine.messages.popleft()
+        chat_id = msg.uid if msg.uid is not None else session.cid
+        await bot.send_message(chat_id, msg.text)
 
 
 async def handle_config(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -493,7 +502,6 @@ async def finish_voting(bot, session: GameSession):
     chan_name = session.engine.state.nominated_chancellor.name
     failed_before = session.engine.state.failed_votes
     lib_before = session.engine.state.liberal_track
-    fasc_before = session.engine.state.fascist_track
 
     if passed:
         voting_text += f"Hail President {pres_name}! Hail Chancellor {chan_name}!"
@@ -511,15 +519,10 @@ async def finish_voting(bot, session: GameSession):
     session.engine.step(engine_votes)
     session.pending_votes = {}
 
-    # Anarchy messaging must come before game_over check, because anarchy
-    # can enact the winning policy and end the game in the same step.
+    await send_engine_messages(bot, session)
+
     if not passed and failed_before == 2:
         anarchy_policy = ("liberal" if session.engine.state.liberal_track > lib_before else "fascist")
-        await bot.send_message(session.cid, "ANARCHY!!")
-        if session.engine.state.liberal_track > lib_before:
-            await bot.send_message(session.cid, "The topmost policy was enacted: liberal")
-        elif session.engine.state.fascist_track > fasc_before:
-            await bot.send_message(session.cid, "The topmost policy was enacted: fascist")
         await maybe_narrate(bot, session, "anarchy", {"policy": anarchy_policy})
 
     if session.engine.game_over:
@@ -564,8 +567,6 @@ async def choose_policy(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 pres_name = session.engine.current_president.name
                 chan_name = session.engine.current_chancellor.name
-                pres_uid = session.engine.current_president.uid
-                fasc_before = session.engine.state.fascist_track
 
                 await callback.edit_message_text(f"The policy {answer} will be enacted!")
                 session.engine.step(answer)
@@ -584,20 +585,7 @@ async def choose_policy(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await end_game(context.bot, session)
                     return
 
-                fasc_after = session.engine.state.fascist_track
-                if fasc_after > fasc_before:
-                    track_action = session.engine.board.fascist_track_actions[fasc_after - 1]
-                    if track_action == ExecutivePower.POLICY:
-                        top3 = session.engine.board.policies[:3]
-                        await context.bot.send_message(session.cid,
-                            f"Presidential Power enabled: Policy Peek \U0001F52E\n"
-                            f"President {pres_name} now knows the next three policies on "
-                            f"the pile. The President may share (or lie about!) the results "
-                            f"of their investigation at their discretion.")
-                        top_text = "\n".join(top3)
-                        await context.bot.send_message(pres_uid,
-                            f"The top three policies are (top most first):\n{top_text}\n"
-                            f"You may lie about this.")
+                await send_engine_messages(context.bot, session)
 
                 await asyncio.sleep(3)
                 await present_action(context.bot, session)
@@ -621,9 +609,6 @@ async def choose_veto(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if answer == "yesveto":
             await callback.edit_message_text("You accepted the Veto!")
-            failed_before = session.engine.state.failed_votes
-            lib_before = session.engine.state.liberal_track
-            fasc_before = session.engine.state.fascist_track
 
             session.engine.step(True)
 
@@ -634,12 +619,7 @@ async def choose_veto(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "president": pres_name, "chancellor": chan_name,
             })
 
-            if failed_before == 2:
-                await context.bot.send_message(session.cid, "ANARCHY!!")
-                if session.engine.state.liberal_track > lib_before:
-                    await context.bot.send_message(session.cid, "The topmost policy was enacted: liberal")
-                elif session.engine.state.fascist_track > fasc_before:
-                    await context.bot.send_message(session.cid, "The topmost policy was enacted: fascist")
+            await send_engine_messages(context.bot, session)
 
             if session.engine.game_over:
                 await end_game(context.bot, session)

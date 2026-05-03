@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from enum import Enum, StrEnum, auto
 
 
@@ -49,6 +50,13 @@ class Action(Enum):
     EXECUTIVE_KILL = auto()
     EXECUTIVE_INSPECT = auto()
     EXECUTIVE_SPECIAL_ELECTION = auto()
+
+
+@dataclass
+class EngineMessage:
+    """A message queued by the engine for the UI layer to deliver."""
+    text: str
+    uid: int | None = None
 
 
 class GameOver(Exception):

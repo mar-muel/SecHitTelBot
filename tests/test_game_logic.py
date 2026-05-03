@@ -113,6 +113,15 @@ class TestBoard:
     def test_policy_deck_size(self, bot, session5):
         assert len(session5.engine.board.policies) == 17
 
+    def test_reshuffle_queues_message(self, bot, session5):
+        engine = session5.engine
+        engine.board.policies = engine.board.policies[:2]
+        engine.board.discards = ["liberal", "fascist", "fascist"]
+        engine._shuffle_if_needed()
+        assert len(engine.messages) == 1
+        assert "reshuffled" in engine.messages[0].text
+        assert len(engine.board.policies) == 5
+
     def test_board_print(self, bot, session5):
         text = session5.engine.board.print_board()
         for section in ("Liberal acts", "Fascist acts", "Election counter", "Presidential order"):

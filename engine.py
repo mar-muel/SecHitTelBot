@@ -1,6 +1,7 @@
 """Telegram-free game engine for Secret Hitler. Can be driven by any strategy."""
 
 import random
+from collections import deque
 from random import randrange
 
 from typing import assert_never
@@ -9,7 +10,7 @@ from constants.cards import PLAYER_SETS
 from boardgamebox.board import Board
 from boardgamebox.game import Game
 from boardgamebox.player import Player
-from game_types import Action, EndCode, ExecutivePower, GameOver, Party, Policy, Role
+from game_types import Action, EndCode, EngineMessage, ExecutivePower, GameOver, Party, Policy, Role
 
 
 class GameEngine:
@@ -50,6 +51,7 @@ class GameEngine:
 
         self.log: list[str] = []
         self.end_code: EndCode = EndCode.RUNNING
+        self.messages: deque[EngineMessage] = deque()
         self._pending: tuple[Action, dict] | None = None
         self._advance_to_nomination()
 
@@ -148,6 +150,10 @@ class GameEngine:
             self.board.discards += self.board.policies
             self.board.policies = random.sample(self.board.discards, len(self.board.discards))
             self.board.discards = []
+            self.messages.append(EngineMessage(
+                f"🔀 Not enough policies left on the pile — the discard pile has been reshuffled. "
+                f"There are now {len(self.board.policies)} policies on the pile."
+            ))
             self._log("Policy pile reshuffled.")
 
     def _increment_player_counter(self) -> None:
@@ -299,6 +305,18 @@ class GameEngine:
                     self._next_round()
                 case ExecutivePower.POLICY:
                     top3 = self.board.policies[:3]
+                    self.messages.append(EngineMessage(
+                        f"Presidential Power enabled: Policy Peek \U0001F52E\n"
+                        f"President {self.current_president.name} now knows the next three policies on "
+                        f"the pile. The President may share (or lie about!) the results "
+                        f"of their investigation at their discretion."
+                    ))
+                    top_text = "\n".join(top3)
+                    self.messages.append(EngineMessage(
+                        f"The top three policies are (top most first):\n{top_text}\n"
+                        f"You may lie about this.",
+                        uid=self.current_president.uid,
+                    ))
                     self._log(f"President peeked: {top3}")
                     self._next_round()
                 case ExecutivePower.KILL:
@@ -350,6 +368,9 @@ class GameEngine:
         self._shuffle_if_needed()
         top_policy = self.board.policies.pop(0)
         self.state.failed_votes = 0
+        self.messages.append(EngineMessage(
+            f"ANARCHY!! The topmost policy was enacted: {top_policy}"
+        ))
         self._log("ANARCHY! Top policy enacted.")
         self._enact(top_policy, anarchy=True)
 

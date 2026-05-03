@@ -539,6 +539,97 @@ class TestChooseVetoCallback:
 # Callback handler: choose_kill
 # =============================================================================
 
+# =============================================================================
+# Engine message delivery (reshuffle, anarchy, policy peek)
+# =============================================================================
+
+class TestEngineMessages:
+    @pytest.mark.asyncio
+    async def test_reshuffle_message_on_low_pile(self, bot, session5):
+        """When the pile is low before a vote pass, the reshuffle message is delivered."""
+        session5.engine.board.policies = session5.engine.board.policies[:2]
+        session5.engine.board.discards = ["liberal"] * 10
+
+        step_to_vote(session5)
+        _, ctx = session5.engine.pending_action()
+        bot.reset_mock()
+
+        for voter in ctx["voters"]:
+            update, context = make_callback(f"{session5.cid}_Ja", voter.uid)
+            context.bot = bot
+            await controller.handle_voting(update, context)
+
+        if session5.engine.game_over:
+            return
+        texts = sent_texts(bot)
+        assert any("reshuffled" in t for t in texts)
+
+    @pytest.mark.asyncio
+    async def test_anarchy_message_ordering(self, bot, session5):
+        """Anarchy message comes after the vote result, before the board."""
+        session5.engine.state.failed_votes = 2
+        step_to_vote(session5)
+        _, ctx = session5.engine.pending_action()
+        bot.reset_mock()
+
+        for voter in ctx["voters"]:
+            update, context = make_callback(f"{session5.cid}_Nein", voter.uid)
+            context.bot = bot
+            await controller.handle_voting(update, context)
+
+        texts = sent_texts(bot)
+        # Find the indices to verify ordering
+        vote_idx = next(i for i, t in enumerate(texts) if "didn't like" in t)
+        anarchy_idx = next(i for i, t in enumerate(texts) if "ANARCHY" in t)
+        assert anarchy_idx > vote_idx
+
+    @pytest.mark.asyncio
+    async def test_policy_peek_ordering(self, bot, session5):
+        """Policy peek messages appear after the board print."""
+        session5.engine.state.fascist_track = 2
+        step_to_chancellor_enact(session5)
+        if session5.engine.game_over:
+            return
+        _, ctx = session5.engine.pending_action()
+        chancellor = ctx["chancellor"]
+        fascist_policy = next((p for p in ctx["policies"] if p == Policy.FASCIST), None)
+        if not fascist_policy:
+            return
+
+        update, context = make_callback(f"{session5.cid}_{fascist_policy}", chancellor.uid)
+        context.bot = bot
+        bot.reset_mock()
+        await controller.choose_policy(update, context)
+
+        texts = sent_texts(bot)
+        board_idx = next(i for i, t in enumerate(texts) if "policies left on the pile" in t)
+        peek_idx = next(i for i, t in enumerate(texts) if "Policy Peek" in t)
+        assert peek_idx > board_idx
+
+    @pytest.mark.asyncio
+    async def test_veto_anarchy_message_after_explanation(self, bot, session5):
+        """When veto triggers anarchy, the anarchy message comes after the veto explanation."""
+        session5.engine.state.failed_votes = 2
+        if not step_to_veto_choice(session5):
+            return
+        _, ctx = session5.engine.pending_action()
+        president = ctx["president"]
+
+        update, context = make_callback(f"{session5.cid}_yesveto", president.uid)
+        context.bot = bot
+        bot.reset_mock()
+        await controller.choose_veto(update, context)
+
+        texts = sent_texts(bot)
+        veto_idx = next(i for i, t in enumerate(texts) if "accepted" in t.lower() and "Veto" in t)
+        anarchy_idx = next(i for i, t in enumerate(texts) if "ANARCHY" in t)
+        assert anarchy_idx > veto_idx
+
+
+# =============================================================================
+# Callback handler: choose_kill
+# =============================================================================
+
 class TestChooseKillCallback:
     def _setup_kill(self, session, target_role=Role.LIBERAL):
         """Inject engine into EXECUTIVE_KILL state. Returns (president, target)."""
